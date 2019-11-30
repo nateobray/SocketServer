@@ -27,6 +27,8 @@ class SocketServer
     private $endBytesRead = 0;
     private $kbReadPerSecond = 0;
     private $kbWrittenPerSecond = 0;
+    
+    private $handler = NULL;
 
     /**
      * Constructor
@@ -124,7 +126,7 @@ class SocketServer
                     unset($this->sockets[$index]);
                     unset($this->socketDataReceived[$index]);
                 } else {
-                    $newData = fread($socket, 8192); // read in 8kb chunks.
+                    $newData = fread($socket, 1024); // read in 8kb chunks.
                     $this->totalBytesRead += strlen($newData);
                     $this->onData($newData, $socket);
                 }
@@ -143,9 +145,9 @@ class SocketServer
     {
         forEach($this->socketDataToWrite as $index => $data){
             $socket = $this->sockets[$index];
-            $bytesWritten = fwrite($socket, $data, 8192);
+            $bytesWritten = fwrite($socket, $data, 1024);
             $this->totalBytesWritten += $bytesWritten;
-            if($bytesWritten < 8192){
+            if($bytesWritten < 1024){
                 unset($this->socketDataToWrite[$index]);
             } else {
                 $this->socketDataToWrite[$index] = substr($data, $bytesWritten-1);
@@ -197,7 +199,7 @@ class SocketServer
      * in the main server loop.  This keeps all writes non-blocking.
      */
 
-    private function write($socket, string $data)
+    public function write($socket, string $data)
     {
         $index = array_search($socket, $this->sockets);
         $this->socketDataToWrite[$index] = $data;
@@ -210,10 +212,34 @@ class SocketServer
      * is then passed in with the data read.
      */
 
-    public function onData(string $data, $socket)
+    private function onData(string $data, $socket)
     {
-        //print_r("|".$data."|\n");
-        $this->write($socket, $data);
+        if($this->handler !== NULL){
+            $this->handler->onData($data, $socket, $this);
+        }
+    }
+
+    /**
+     * Register Handler
+     * 
+     * This allows you to use the socket server to create your own type of server (echo server,
+     * web socket server, etc...)
+     */
+
+    public function registerHandler(\obray\interfaces\SocketServerHandlerInterface $handler): void
+    {
+        $this->handler = $handler;
+    }
+
+    /**
+     * Get Sockets
+     * 
+     * Returns a list of active sockets.  Can be used by a handler distribute messages.
+     */
+
+    public function getSockets(): array
+    {
+        return $this->sockets;
     }
 
 }
