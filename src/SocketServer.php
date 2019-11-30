@@ -20,6 +20,13 @@ class SocketServer
     private $loops = 0;
     private $totalBytesWritten = 0;
     private $totalBytesRead = 0;
+    private $displayServerStatus = true;
+    private $start = 0;
+    private $end = 0;
+    private $startBytesRead = 0;
+    private $endBytesRead = 0;
+    private $kbReadPerSecond = 0;
+    private $kbWrittenPerSecond = 0;
 
     /**
      * Constructor
@@ -55,33 +62,16 @@ class SocketServer
 			throw new \Exception("Unable to bind to ".$this->host.":".$this->port." over ".$this->protocol."\n");
         }
         
-        //print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
+        print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
         // start stream select loop
         $start = 0; $end = 0; $endBytesRead = 0; $startBytesRead = 0; $kbReadPerSecond = 0;
         while(true){
             ++$this->loops;
-            $end = \microtime(true);
-            $endBytesRead = $this->totalBytesRead;
-            $elapsed = $end - $start;
-            if( ($endBytesRead - $startBytesRead) != 0 && $elapsed != 0){
-                $kbReadPerSecond = (($endBytesRead - $startBytesRead) / $elapsed) / 1000;
-            } else {
-                $kbReadPerSecond = 0;
-            }
+            $this->displayServerStatus();
             
-            $start = \time();
-            $startBytesRead = $this->totalBytesRead;
-            if($this->loops % 50 == 0){
-                system('clear');
-                print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
-                print_r(count($this->sockets)." connection(s)\n");
-                print_r("Read speed: " . number_format($kbReadPerSecond, 0, '.', ',') . " kb/s\n");
-                print_r(\number_format($this->totalBytesWritten/1000, 2, '.', ',')." kb written\n");
-                print_r(\number_format($this->totalBytesRead/1000, 2, '.', ',')." kb read\n");
-            }
             $changed = $this->sockets; $null = NULL;
             $changed[] = $this->socket;
-            stream_select( $changed, $null, $null, 0, 10000 );
+            stream_select( $changed, $null, $null, 0, 5000 );
 
             // connect new socket connections
             $this->connectNewSockets($changed);
@@ -160,6 +150,43 @@ class SocketServer
             } else {
                 $this->socketDataToWrite[$index] = substr($data, $bytesWritten-1);
             }
+        }
+    }
+
+    /**
+     * Display Server Status
+     * 
+     * If enabled this will show the server
+     */
+
+    private function displayServerStatus()
+    {
+        if($this->displayServerStatus && $this->loops % 100 == 0){
+            $this->end = \microtime(true);
+            $this->endBytesRead = $this->totalBytesRead;
+            $this->endBytesWritten = $this->totalBytesWritten;
+            $elapsed = $this->end - $this->start;
+            if( ($this->endBytesRead - $this->startBytesRead) != 0 && $elapsed != 0){
+                $this->kbReadPerSecond = (($this->endBytesRead - $this->startBytesRead) / $elapsed) / 1000;
+            } else {
+                $this->kbReadPerSecond = 0;
+            }
+            if( ($this->endBytesWritten - $this->startBytesWritten) != 0 && $elapsed != 0){
+                $this->kbWrittenPerSecond = (($this->endBytesWritten - $this->startBytesWritten) / $elapsed) / 1000;
+            } else {
+                $this->kbWrittenPerSecond = 0;
+            }
+            $this->start = \time();
+            $this->startBytesRead = $this->totalBytesRead;
+            $this->startBytesWritten = $this->totalBytesWritten;
+
+            system('clear');
+            print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
+            print_r(count($this->sockets)." connection(s)\n");
+            print_r("Read speed: " . number_format($this->kbReadPerSecond, 0, '.', ',') . " kb/s\n");
+            print_r("Write speed: " . number_format($this->kbWrittenPerSecond, 0, '.', ',') . " kb/s\n");
+            print_r(\number_format($this->totalBytesWritten/1000, 2, '.', ',')." kb written\n");
+            print_r(\number_format($this->totalBytesRead/1000, 2, '.', ',')." kb read\n");
         }
     }
 
