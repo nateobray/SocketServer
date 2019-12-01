@@ -143,14 +143,17 @@ class SocketServer
 
     private function writeSocketData()
     {
-        forEach($this->socketDataToWrite as $index => $data){
+        forEach($this->socketDataToWrite as $index => $array){
             $socket = $this->sockets[$index];
-            $bytesWritten = fwrite($socket, $data, 1024);
-            $this->totalBytesWritten += $bytesWritten;
-            if($bytesWritten < 1024){
-                unset($this->socketDataToWrite[$index]);
-            } else {
-                $this->socketDataToWrite[$index] = substr($data, $bytesWritten-1);
+            forEach($array as $i => $data){
+                $bytesWritten = fwrite($socket, $data, 1024);
+                $this->totalBytesWritten += $bytesWritten;
+                if($bytesWritten < 1024){
+                    unset($this->socketDataToWrite[$index][$i]);
+                    if(empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
+                } else {
+                    $this->socketDataToWrite[$index][$i] = substr($data, $bytesWritten-1);
+                }
             }
         }
     }
@@ -202,7 +205,8 @@ class SocketServer
     public function write($socket, string $data)
     {
         $index = array_search($socket, $this->sockets);
-        $this->socketDataToWrite[$index] = $data;
+        if(empty($this->socketDataToWrite)) $this->socketDataToWrite = [];
+        $this->socketDataToWrite[$index][] = $data;
     }
 
     /**
@@ -240,6 +244,18 @@ class SocketServer
     public function getSockets(): array
     {
         return $this->sockets;
+    }
+
+    /**
+     * Show Server Status
+     * 
+     * By default this is set to true, but if you don't wan the server status being
+     * written to the screen you can set this to false (faster)
+     */
+
+    public function showServerStatus(bool $displayStatus): void
+    {
+        $this->displayServerStatus = $displayStatus;
     }
 
 }
