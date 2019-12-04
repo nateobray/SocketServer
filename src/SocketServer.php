@@ -15,6 +15,7 @@ class SocketServer
     private $sockets = [];
     private $socketDataReceived = [];
     private $socketDataToWrite = [];
+    private $disconnectQueue = [];
 
     // internal
     private $loops = 0;
@@ -27,6 +28,9 @@ class SocketServer
     private $endBytesRead = 0;
     private $kbReadPerSecond = 0;
     private $kbWrittenPerSecond = 0;
+    private $selectTimeout = 500;
+    private $readChunkSize = 8129;
+    private $writeChunkSize = 8129;
     
     private $handler = NULL;
 
@@ -73,7 +77,7 @@ class SocketServer
             
             $changed = $this->sockets; $null = NULL;
             $changed[] = $this->socket;
-            stream_select( $changed, $null, $null, 0, 5000 );
+            stream_select( $changed, $null, $null, 0, $this->selectTimeout );
 
             // connect new socket connections
             $this->connectNewSockets($changed);
@@ -83,6 +87,9 @@ class SocketServer
 
             // write socket data
             $this->writeSocketData();
+
+            // shutdown queued disconnects
+            $this->disconnectSockets();
         }        
     }
 
@@ -97,15 +104,51 @@ class SocketServer
     private function connectNewSockets(array $changed)
     {
         if( in_array($this->socket,$changed) ){
+            //print_r("!!!! ATTEMPTING CONNECT !!!!!\n");
+            $this->onConnect($this->socket);
             $new_socket = @stream_socket_accept($this->socket,1);
             if( !$new_socket ){
                 return FALSE;
             }
-            //print_r("Connected\n");
             $this->sockets[] = $new_socket;
             stream_set_blocking($new_socket, false);
+            $this->onConnected($new_socket);
             return $new_socket;
         }
+    }
+
+    /**
+     * Disconnect Sockets
+     * 
+     * Goes through the list of queued disconnects and calls disconnect on all of them.
+     * This will trigger onDisconnect and onDisconnected.
+     */
+
+    private function disconnectSockets()
+    {
+        forEach($this->disconnectQueue as $socket) {
+            $index = array_search($socket, $this->sockets);
+            $this->disconnect($socket, $index);
+        }
+    }
+
+    /**
+     * Disconnect
+     * 
+     * Shuts down the socket connection and prevents and addtional reads and writes
+     * to that socket.  Also removes it from the list of sockets and socket data
+     */
+
+    private function disconnect($socket, $index)
+    {
+        $this->onDisconnect($socket);
+        stream_socket_shutdown($socket, STREAM_SHUT_RDWR);
+        unset($this->sockets[$index]);
+        unset($this->socketDataReceived[$index]);
+        
+        unset($this->socketDataToWrite[$index]);
+        
+        $this->onDisconnected($socket);
     }
 
     /**
@@ -122,13 +165,23 @@ class SocketServer
             $index = array_search($socket, $changed);
             if($index !== false){
                 if( feof($socket) ){
-                    //print_r("disconnected\n");
-                    unset($this->sockets[$index]);
-                    unset($this->socketDataReceived[$index]);
+                    $this->disconnect($socket, $index);
                 } else {
-                    $newData = fread($socket, 1024); // read in 8kb chunks.
-                    $this->totalBytesRead += strlen($newData);
-                    $this->onData($newData, $socket);
+                    $shouldRead = true; $data = '';
+                    while($shouldRead){
+                        // read from socket
+                        $newData = @fread($socket, $this->readChunkSize);
+                        // handle error condition
+                        if($newData === false){ 
+                            $this->disconnect($socket, $index);
+                            continue;
+                        }
+                        $data .= $newData;
+                        $this->totalBytesRead += mb_strlen($newData, '8bit');
+                        if(stream_get_meta_data($socket)['unread_bytes'] > 0) continue;
+                        $shouldRead = false;
+                    }
+                    $this->onData($data, $socket);
                 }
             }
         }
@@ -143,16 +196,24 @@ class SocketServer
 
     private function writeSocketData()
     {
+        $numberOfWrites = 0; 
         forEach($this->socketDataToWrite as $index => $array){
+            ++$numberOfWrites;
             $socket = $this->sockets[$index];
             forEach($array as $i => $data){
-                $bytesWritten = fwrite($socket, $data, 1024);
-                $this->totalBytesWritten += $bytesWritten;
-                if($bytesWritten < 1024){
-                    unset($this->socketDataToWrite[$index][$i]);
-                    if(empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
-                } else {
-                    $this->socketDataToWrite[$index][$i] = substr($data, $bytesWritten-1);
+                while(!empty($this->socketDataToWrite[$index][$i])){
+                    $bytesWritten = @fwrite($socket, $this->socketDataToWrite[$index][$i]);
+                    if($bytesWritten === false ) {
+                        $this->disconnect($socket, $index);
+                        break;
+                    }
+                    $this->totalBytesWritten += $bytesWritten;
+                    if($bytesWritten < $this->writeChunkSize){
+                        unset($this->socketDataToWrite[$index][$i]);
+                        if(empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
+                    } else {
+                        $this->socketDataToWrite[$index][$i] = mb_strcut($this->socketDataToWrite[$index][$i], $bytesWritten);
+                    }
                 }
             }
         }
@@ -184,10 +245,11 @@ class SocketServer
             $this->start = \time();
             $this->startBytesRead = $this->totalBytesRead;
             $this->startBytesWritten = $this->totalBytesWritten;
+            $loopsPerSecond = 100 / $elapsed;
 
             system('clear');
             print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
-            print_r(count($this->sockets)." connection(s)\n");
+            print_r(count($this->sockets)." connection(s) - : ".$loopsPerSecond." loops/s\n");
             print_r("Read speed: " . number_format($this->kbReadPerSecond, 0, '.', ',') . " kb/s\n");
             print_r("Write speed: " . number_format($this->kbWrittenPerSecond, 0, '.', ',') . " kb/s\n");
             print_r(\number_format($this->totalBytesWritten/1000, 2, '.', ',')." kb written\n");
@@ -196,17 +258,29 @@ class SocketServer
     }
 
     /**
-     * Write
+     * Q Write
      * 
      * Very simply adds items to an array to be written to the corresponding socket
      * in the main server loop.  This keeps all writes non-blocking.
      */
 
-    public function write($socket, string $data)
+    public function qWrite($socket, string $data)
     {
         $index = array_search($socket, $this->sockets);
         if(empty($this->socketDataToWrite)) $this->socketDataToWrite = [];
         $this->socketDataToWrite[$index][] = $data;
+    }
+
+    /**
+     * Q Disconnect
+     * 
+     * This queues a disconnect.  This is useful when you want everything that is
+     * queued up to write to finish before disconnecting the client.
+     */
+
+    public function qDisconnect($socket)
+    {
+        $this->disconnectQueue[] = $socket;
     }
 
     /**
@@ -220,6 +294,65 @@ class SocketServer
     {
         if($this->handler !== NULL){
             $this->handler->onData($data, $socket, $this);
+        }
+    }
+
+    /**
+     * On Connected
+     * 
+     * This checks to for a handler and calls the handlers onConnect function.  This happens
+     * before the new connection is established and the socket passed is the main server
+     * connection.
+     */
+
+    private function onConnect($socket)
+    {
+        if($this->handler !== NULL){
+            $this->handler->onConnect($socket, $this);
+        }
+    }
+
+    /**
+     * On Connected
+     * 
+     * This checks to for a handler and calls the handlers onConnected function.  This happens
+     * after the connect is established the the socket passed is the new socket connection.
+     */
+
+    private function onConnected($socket)
+    {
+        if($this->handler !== NULL){
+            $this->handler->onConnected($socket, $this);
+        }
+    }
+
+    /**
+     * On Disconnect
+     * 
+     * This checks to for a handler and calls the handlers disconnect function. This allows
+     * the handler to manage it's own set of active connections and remove them when a disconnect
+     * happens.  This is called before the socket is shutdown.
+     */
+
+    private function onDisconnect($socket)
+    {
+        if($this->handler !== NULL){
+            $this->handler->onDisconnect($socket, $this);
+        }
+    }
+
+    /**
+     * On Disconnected
+     * 
+     * This checks to for a handler and calls the handlers disconnected function. This allows
+     * the handler to manage it's own set of active connections and remove them when a disconnected
+     * happens.  This is called after the socket is shutdown.
+     */
+
+    private function onDisconnected($socket)
+    {
+        if($this->handler !== NULL){
+            $this->handler->onDisconnected($socket, $this);
         }
     }
 
@@ -256,6 +389,41 @@ class SocketServer
     public function showServerStatus(bool $displayStatus): void
     {
         $this->displayServerStatus = $displayStatus;
+    }
+
+    /**
+     * Set Select Timeout
+     * 
+     * This sets the select timeout.  A smaller number make se the server process requests in shorter
+     * intervals, but also comsumes more CPU.  It's not recommended to set this to 0.
+     */
+
+     public function setSelectTImeout(int $microseconds = 5000)
+     {
+        $this->selectTimeout = $microseconds;
+     }
+
+    /**
+     * Set Read Chunk Size
+     *  
+     * Set the read chunk size, the maximium size it will read off the network before read returns
+     * and allows andother loop to process.
+     */
+
+    public function setReadChunkSize(int $chunkSize = 1024)
+    {
+        $this->readChunkSize = $chunkSize;
+    }
+
+    /**
+     * Set Write Chunk Size
+     * 
+     * Sets the write chunk size, the maximum bytes it will write to the network before returning and
+     * allowing another loop to process.
+     */
+
+    public function setWriteChunkSize(int $chunkSize = 1024){
+        $this->writeChunkSize = $chunkSize;
     }
 
 }
