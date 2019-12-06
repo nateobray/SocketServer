@@ -31,6 +31,7 @@ class SocketServer
     private $selectTimeout = 500;
     private $readChunkSize = 8129;
     private $writeChunkSize = 8129;
+    private $maxWriteRetries = 10;
     
     private $handler = NULL;
 
@@ -201,18 +202,20 @@ class SocketServer
             ++$numberOfWrites;
             $socket = $this->sockets[$index];
             forEach($array as $i => $data){
+                $retries = 0;
                 while(!empty($this->socketDataToWrite[$index][$i])){
                     $bytesWritten = @fwrite($socket, $this->socketDataToWrite[$index][$i]);
-                    if($bytesWritten === false ) {
+                    if($bytesWritten === false || $retries > $this->maxWriteRetries ) {
                         $this->disconnect($socket, $index);
                         break;
                     }
                     $this->totalBytesWritten += $bytesWritten;
-                    if($bytesWritten < $this->writeChunkSize){
+                    if($bytesWritten < mb_strlen($this->socketDataToWrite[$index][$i])){
+                        ++$retries;
+                        $this->socketDataToWrite[$index][$i] = mb_strcut($this->socketDataToWrite[$index][$i], $bytesWritten);
+                    } else {
                         unset($this->socketDataToWrite[$index][$i]);
                         if(empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
-                    } else {
-                        $this->socketDataToWrite[$index][$i] = mb_strcut($this->socketDataToWrite[$index][$i], $bytesWritten);
                     }
                 }
             }
