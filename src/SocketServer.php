@@ -10,9 +10,11 @@ class SocketServer
     private $port;
     private $context;
     private $socket;
+    private $socketWatcher;
 
     // socket management
     private $sockets = [];
+    private $socketWatchers = [];
     private $socketDataReceived = [];
     private $socketDataToWrite = [];
     private $disconnectQueue = [];
@@ -72,26 +74,19 @@ class SocketServer
         print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
         // start stream select loop
         $start = 0; $end = 0; $endBytesRead = 0; $startBytesRead = 0; $kbReadPerSecond = 0;
-        while(true){
-            ++$this->loops;
-            $this->displayServerStatus();
+
+        if( class_exists( '\EV' ) ) {
+            $this->socketWatcher = new \EvIo($this->socket, \Ev::READ, function($watcher, $w2){
+                $this->connectNewSockets($watcher->data);
+            }, $this->socket); 
             
-            $changed = $this->sockets; $null = NULL;
-            $changed[] = $this->socket;
-            stream_select( $changed, $null, $null, 0, $this->selectTimeout );
-
-            // connect new socket connections
-            $this->connectNewSockets($changed);
-            
-            // read socket data (see which sockets we need to read from)
-            $this->readSocketData($changed);
-
-            // write socket data
-            $this->writeSocketData();
-
-            // shutdown queued disconnects
-            $this->disconnectSockets();
-        }        
+            \EV::run();   
+        } else {
+            print_r("select default event loop (uses stream_select)");
+            $evLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket, $this->selectTimeout);
+            $evLoop->run([$this, 'loop']);            
+        }
+        
     }
 
     /**
@@ -102,20 +97,26 @@ class SocketServer
      * to non-blocking so we can handle many requests coming in an the same time.
      */
 
-    private function connectNewSockets(array $changed)
+    private function connectNewSockets($socket)
     {
-        if( in_array($this->socket,$changed) ){
-            //print_r("!!!! ATTEMPTING CONNECT !!!!!\n");
-            $this->onConnect($this->socket);
-            $new_socket = @stream_socket_accept($this->socket,1);
-            if( !$new_socket ){
-                return FALSE;
-            }
-            $this->sockets[] = $new_socket;
-            stream_set_blocking($new_socket, false);
-            $this->onConnected($new_socket);
-            return $new_socket;
+        $this->onConnect($socket);
+        $new_socket = @stream_socket_accept($socket,1);
+        if( !$new_socket ){
+            print_r("Failed to connect\n");
+            return FALSE;
         }
+        $this->sockets[] = $new_socket;
+        stream_set_blocking($new_socket, false);
+        $this->onConnected($new_socket);
+        
+        $this->socketWatchers[] = new \EvIo($new_socket, \Ev::WRITE|\Ev::READ, function($w){
+            //echo "ready child socket\n";
+            ++$this->loops;
+            $this->writeSocketData($w->data);
+            $this->readSocketData($w->data);
+            $this->displayServerStatus();
+        }, $new_socket);    
+        return $new_socket;
     }
 
     /**
@@ -128,8 +129,8 @@ class SocketServer
     private function disconnectSockets()
     {
         forEach($this->disconnectQueue as $socket) {
-            $index = array_search($socket, $this->sockets);
-            $this->disconnect($socket, $index);
+            $this->disconnect($socket
+        );
         }
     }
 
@@ -140,15 +141,15 @@ class SocketServer
      * to that socket.  Also removes it from the list of sockets and socket data
      */
 
-    private function disconnect($socket, $index)
+    private function disconnect($socket)
     {
+        $index = array_search($socket, $this->sockets);
         $this->onDisconnect($socket);
         stream_socket_shutdown($socket, STREAM_SHUT_RDWR);
         unset($this->sockets[$index]);
         unset($this->socketDataReceived[$index]);
-        
+        unset($this->socketWatchers[$index]);
         unset($this->socketDataToWrite[$index]);
-        
         $this->onDisconnected($socket);
     }
 
@@ -160,31 +161,26 @@ class SocketServer
      * to onData().
      */
 
-    private function readSocketData(array $changed)
+    private function readSocketData($socket)
     {
-        forEach($this->sockets as $i => $socket){
-            $index = array_search($socket, $changed);
-            if($index !== false){
-                if( feof($socket) ){
-                    $this->disconnect($socket, $index);
-                } else {
-                    $shouldRead = true; $data = '';
-                    while($shouldRead){
-                        // read from socket
-                        $newData = @fread($socket, $this->readChunkSize);
-                        // handle error condition
-                        if($newData === false){ 
-                            $this->disconnect($socket, $index);
-                            continue;
-                        }
-                        $data .= $newData;
-                        $this->totalBytesRead += mb_strlen($newData, '8bit');
-                        if(stream_get_meta_data($socket)['unread_bytes'] > 0) continue;
-                        $shouldRead = false;
-                    }
-                    $this->onData($data, $socket);
+        if( feof($socket) ){
+            $this->disconnect($socket);
+        } else {
+            $shouldRead = true; $data = '';
+            while($shouldRead){
+                // read from socket
+                $newData = @fread($socket, $this->readChunkSize);
+                // handle error condition
+                if($newData === false){ 
+                    $this->disconnect($socket);
+                    continue;
                 }
+                $data .= $newData;
+                $this->totalBytesRead += mb_strlen($newData, '8bit');
+                if(stream_get_meta_data($socket)['unread_bytes'] > 0) continue;
+                $shouldRead = false;
             }
+            $this->onData($data, $socket);
         }
     }
 
@@ -195,28 +191,26 @@ class SocketServer
      * increments.
      */
 
-    private function writeSocketData()
+    private function writeSocketData($socket)
     {
-        $numberOfWrites = 0; 
-        forEach($this->socketDataToWrite as $index => $array){
-            ++$numberOfWrites;
-            $socket = $this->sockets[$index];
-            forEach($array as $i => $data){
-                $retries = 0;
-                while(!empty($this->socketDataToWrite[$index][$i])){
-                    $bytesWritten = @fwrite($socket, $this->socketDataToWrite[$index][$i]);
-                    if($bytesWritten === false || $retries > $this->maxWriteRetries ) {
-                        $this->disconnect($socket, $index);
-                        break;
-                    }
-                    $this->totalBytesWritten += $bytesWritten;
-                    if($bytesWritten < mb_strlen($this->socketDataToWrite[$index][$i])){
-                        ++$retries;
-                        $this->socketDataToWrite[$index][$i] = mb_strcut($this->socketDataToWrite[$index][$i], $bytesWritten);
-                    } else {
-                        unset($this->socketDataToWrite[$index][$i]);
-                        if(empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
-                    }
+        $index = array_search($socket, $this->sockets);   
+        if(empty($this->socketDataToWrite[$index])) return;
+
+        forEach($this->socketDataToWrite[$index] as $i => $data){
+            $retries = 0;
+            while(!empty($this->socketDataToWrite[$index][$i])){
+                $bytesWritten = @fwrite($socket, $this->socketDataToWrite[$index][$i]);
+                if($bytesWritten === false || $retries > $this->maxWriteRetries ) {
+                    $this->disconnect($socket);
+                    break;
+                }
+                $this->totalBytesWritten += $bytesWritten;
+                if($bytesWritten < mb_strlen($this->socketDataToWrite[$index][$i])){
+                    ++$retries;
+                    $this->socketDataToWrite[$index][$i] = mb_strcut($this->socketDataToWrite[$index][$i], $bytesWritten);
+                } else {
+                    unset($this->socketDataToWrite[$index][$i]);
+                    if(empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
                 }
             }
         }
