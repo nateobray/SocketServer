@@ -4,6 +4,9 @@ namespace obray;
 
 class SocketServer 
 {
+    const SELECT = 0;
+    const EV = 1;
+
     // connection details
     private $protocol;
     private $host;
@@ -14,7 +17,8 @@ class SocketServer
 
     // socket management
     private $sockets = [];
-    private $socketWatchers = [];
+    private $socketReadWatchers = [];
+    private $socketWriteWatchers = [];
     private $socketDataReceived = [];
     private $socketDataToWrite = [];
     private $disconnectQueue = [];
@@ -32,8 +36,8 @@ class SocketServer
     private $kbWrittenPerSecond = 0;
     private $selectTimeout = 500;
     private $readChunkSize = 8129;
-    private $writeChunkSize = 8129;
     private $maxWriteRetries = 10;
+    private $eventLoopType;
     
     private $handler = NULL;
 
@@ -75,18 +79,20 @@ class SocketServer
         // start stream select loop
         $start = 0; $end = 0; $endBytesRead = 0; $startBytesRead = 0; $kbReadPerSecond = 0;
 
-        if( class_exists( '\EV' ) ) {
-            $this->socketWatcher = new \EvIo($this->socket, \Ev::READ, function($watcher, $w2){
+        if( $this->eventLoopType === NULL && !class_exists( '\EV' || $this->eventLoopType === EV ) ) {
+            $this->eventLoop = new \obray\eventLoops\EVLoop();
+            $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
-            }, $this->socket); 
-            
-            \EV::run();   
+            }, $this->socket);
+            $this->eventLoop->run();
         } else {
             print_r("select default event loop (uses stream_select)");
-            $evLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket, $this->selectTimeout);
-            $evLoop->run([$this, 'loop']);            
+            $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket, $this->selectTimeout);
+            $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
+                $this->connectNewSockets($watcher->data);
+            }, $this->socket);
+            $this->eventLoop->run();            
         }
-        
     }
 
     /**
@@ -100,23 +106,27 @@ class SocketServer
     private function connectNewSockets($socket)
     {
         $this->onConnect($socket);
-        $new_socket = @stream_socket_accept($socket,1);
-        if( !$new_socket ){
+        $newSocket = @stream_socket_accept($socket,1);
+        if( !$newSocket ){
             print_r("Failed to connect\n");
             return FALSE;
         }
-        $this->sockets[] = $new_socket;
-        stream_set_blocking($new_socket, false);
-        $this->onConnected($new_socket);
-        
-        $this->socketWatchers[] = new \EvIo($new_socket, \Ev::WRITE|\Ev::READ, function($w){
-            //echo "ready child socket\n";
+        $this->sockets[] = $newSocket;
+        stream_set_blocking($newSocket, false);
+        $this->onConnected($newSocket);
+
+        $this->socketReadWatchers[] = $this->eventLoop->watchStreamSocket($newSocket, function($w){
             ++$this->loops;
-            $this->writeSocketData($w->data);
             $this->readSocketData($w->data);
             $this->displayServerStatus();
-        }, $new_socket);    
-        return $new_socket;
+        }, $newSocket);
+
+        $this->socketWriteWatchers[] = $this->eventLoop->watchTimer(0, 0.1, function($w){
+            ++$this->loops;
+            $this->writeSocketData($w->data);
+        }, $newSocket);
+        
+        return $newSocket;
     }
 
     /**
@@ -129,8 +139,7 @@ class SocketServer
     private function disconnectSockets()
     {
         forEach($this->disconnectQueue as $socket) {
-            $this->disconnect($socket
-        );
+            $this->disconnect($socket);
         }
     }
 
@@ -144,11 +153,15 @@ class SocketServer
     private function disconnect($socket)
     {
         $index = array_search($socket, $this->sockets);
+        print_r("Disconnecting Index: " . $index . "\n");
         $this->onDisconnect($socket);
+        $this->socketReadWatchers[$index]->stop();
+        $this->socketWriteWatchers[$index]->stop();
         stream_socket_shutdown($socket, STREAM_SHUT_RDWR);
         unset($this->sockets[$index]);
         unset($this->socketDataReceived[$index]);
-        unset($this->socketWatchers[$index]);
+        unset($this->socketReadWatchers[$index]);
+        unset($this->socketWriteWatchers[$index]);
         unset($this->socketDataToWrite[$index]);
         $this->onDisconnected($socket);
     }
@@ -412,15 +425,8 @@ class SocketServer
         $this->readChunkSize = $chunkSize;
     }
 
-    /**
-     * Set Write Chunk Size
-     * 
-     * Sets the write chunk size, the maximum bytes it will write to the network before returning and
-     * allowing another loop to process.
-     */
-
-    public function setWriteChunkSize(int $chunkSize = 1024){
-        $this->writeChunkSize = $chunkSize;
+    public function setEventLoopType(int $eventLoopType)
+    {
+        $this->eventLoopType = $eventLoopType;
     }
-
 }
