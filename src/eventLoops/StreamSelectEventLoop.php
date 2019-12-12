@@ -8,11 +8,16 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
     private $socketWatchersSockets = [];
     private $timerWatchers = [];
 
-    public function __construct($socket, $timeout)
+    public function __construct($socket)
     {
         $this->socket = $socket;
-        $this->selectTimeout = $timeout;
     }
+
+    /**
+     * Run
+     * 
+     * Starts the main event loop based on stream_select
+     */
 
     public function run()
     {
@@ -50,6 +55,13 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
         return true;
     }
 
+    /**
+     * Watch Stream watch
+     * 
+     * Watches for changes to the specified socket and when they occur
+     * it calls the callback
+     */
+
     public function watchStreamSocket($socket, callable $callback, $data)
     {
         $watcher = new \obray\eventLoops\Watcher($data);
@@ -59,6 +71,13 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
         $this->socketWatchersSockets[] = $socket;
         return $watcher;
     }
+
+    /**
+     * Watch TImer
+     * 
+     * Takes a delay and interval and when the delay and/or interval passes
+     * the callback is called
+     */
 
     public function watchTimer(float $delay, float $interval, callable $callback, $data)
     {

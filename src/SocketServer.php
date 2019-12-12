@@ -34,9 +34,8 @@ class SocketServer
     private $endBytesRead = 0;
     private $kbReadPerSecond = 0;
     private $kbWrittenPerSecond = 0;
-    private $selectTimeout = 500;
     private $readChunkSize = 8129;
-    private $maxWriteRetries = 10;
+    private $maxWriteRetries = 100;
     private $eventLoopType;
     
     private $handler = NULL;
@@ -87,7 +86,7 @@ class SocketServer
             $this->eventLoop->run();
         } else {
             print_r("select default event loop (uses stream_select)");
-            $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket, $this->selectTimeout);
+            $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket);
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
             }, $this->socket);
