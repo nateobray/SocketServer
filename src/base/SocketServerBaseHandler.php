@@ -1,7 +1,7 @@
 <?php
-namespace obray\handlers;
+namespace obray\base;
 
-class EchoServer extends \obray\base\SocketServerBaseHandler
+class SocketServerBaseHandler implements \obray\interfaces\SocketServerHandlerInterface
 {
     public function onData(string $data, $socket, \obray\SocketServer $server): void
     {
@@ -16,6 +16,18 @@ class EchoServer extends \obray\base\SocketServerBaseHandler
     public function onConnectFailed($socket, \obray\SocketServer $server): void
     {
         print_r("failed!\n");
+    }
+
+    public function onWriteFailed($data, $socket, \obray\SocketServer $server): void
+    {
+        print_r("Write failed!\n");
+        $server->disconnect($socket);
+    }
+
+    public function onReadFailed($socket, \obray\SocketServer $server): void
+    {
+        print_r("Read failed!\n");
+        $server->disconnect($socket);
     }
 
     public function onConnected($socket, \obray\SocketServer $server): void

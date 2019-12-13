@@ -85,7 +85,6 @@ class SocketServer
             }, $this->socket);
             $this->eventLoop->run();
         } else {
-            print_r("select default event loop (uses stream_select)");
             $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket);
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
@@ -107,7 +106,7 @@ class SocketServer
         $this->onConnect($socket);
         $newSocket = @stream_socket_accept($socket,1);
         if( !$newSocket ){
-            print_r("Failed to connect\n");
+            $this->onConnectFailed();
             return FALSE;
         }
         $this->sockets[] = $newSocket;
@@ -152,7 +151,6 @@ class SocketServer
     private function disconnect($socket)
     {
         $index = array_search($socket, $this->sockets);
-        print_r("Disconnecting Index: " . $index . "\n");
         $this->onDisconnect($socket);
         $this->socketReadWatchers[$index]->stop();
         $this->socketWriteWatchers[$index]->stop();
@@ -184,7 +182,7 @@ class SocketServer
                 $newData = @fread($socket, $this->readChunkSize);
                 // handle error condition
                 if($newData === false){ 
-                    $this->disconnect($socket);
+                    $this->onReadFailed($socket);
                     continue;
                 }
                 $data .= $newData;
@@ -213,7 +211,7 @@ class SocketServer
             while(!empty($this->socketDataToWrite[$index][$i])){
                 $bytesWritten = @fwrite($socket, $this->socketDataToWrite[$index][$i]);
                 if($bytesWritten === false || $retries > $this->maxWriteRetries ) {
-                    $this->disconnect($socket);
+                    $this->onWriteFailed($socket, $this->socketDataToWrite[$index][$i]);
                     break;
                 }
                 $this->totalBytesWritten += $bytesWritten;
@@ -322,6 +320,19 @@ class SocketServer
     }
 
     /**
+     * On Connect Failed
+     * 
+     * Calls the handlers on connection fail
+     */
+
+    private function onConnectFailed()
+    {
+        if($this->handler !== NULL){
+            $this->handler->onConnectFailed($socket, $this);
+        }
+    }
+
+    /**
      * On Connected
      * 
      * This checks to for a handler and calls the handlers onConnected function.  This happens
@@ -332,6 +343,38 @@ class SocketServer
     {
         if($this->handler !== NULL){
             $this->handler->onConnected($socket, $this);
+        }
+    }
+
+    /**
+     * On Write Failed
+     * 
+     * When a write action fails, this will be called. If no handler is defined the default
+     * behavior is to disconnect.
+     */
+
+    private function onWriteFailed($socket, $data)
+    {
+        if($this->handler !== NULL){
+            $this->handler->onWriteFailed($data, $socket, $this);
+        } else {
+            $this->disconnect();
+        }
+    }
+
+    /**
+     * On Read Failed
+     * 
+     * When a read action fails, this will be called. If no handler is defined the default
+     * behavior is to disconnect.
+     */
+
+    private function onReadFailed($socket)
+    {
+        if($this->handler !== NULL){
+            $this->handler->onReadFailed($socket, $this);
+        } else {
+            $this->disconnect();
         }
     }
 
