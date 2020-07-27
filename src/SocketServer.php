@@ -325,7 +325,7 @@ class SocketServer
      * Calls the handlers on connection fail
      */
 
-    private function onConnectFailed()
+    private function onConnectFailed($socket)
     {
         if($this->handler !== NULL){
             $this->handler->onConnectFailed($socket, $this);
