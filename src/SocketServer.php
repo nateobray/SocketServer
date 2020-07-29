@@ -111,7 +111,7 @@ class SocketServer
         }
         if($this->context->isEncrypted()){
             stream_set_blocking($newSocket, true);
-            if(!stream_socket_enable_crypto($newSocket, true, STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT|STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT|STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT)){
+            if(!stream_socket_enable_crypto($newSocket, true, STREAM_CRYPTO_METHOD_TLSv1_0_SERVER|STREAM_CRYPTO_METHOD_TLSv1_1_SERVER|STREAM_CRYPTO_METHOD_TLSv1_2_SERVER)){
                 $this->onConnectFailed();
                 return FALSE;
             }
