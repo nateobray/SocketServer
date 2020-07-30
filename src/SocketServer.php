@@ -112,7 +112,7 @@ class SocketServer
         if($this->context->isEncrypted()){
             stream_set_blocking($newSocket, true);
             if(!stream_socket_enable_crypto($newSocket, true, STREAM_CRYPTO_METHOD_TLSv1_0_SERVER|STREAM_CRYPTO_METHOD_TLSv1_1_SERVER|STREAM_CRYPTO_METHOD_TLSv1_2_SERVER)){
-                $this->onConnectFailed();
+                $this->onConnectFailed($newSocket);
                 return FALSE;
             }
         }
@@ -334,6 +334,7 @@ class SocketServer
 
     private function onConnectFailed($socket)
     {
+        print_r("on connection failed!\n");
         if($this->handler !== NULL){
             $this->handler->onConnectFailed($socket, $this);
         }
