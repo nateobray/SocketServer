@@ -8,7 +8,7 @@ class StreamContext
 
     public function __construct(array $context=[])
     {
-        if($context['ssl']) $this->isEncrypted = true;
+        if(!empty($context['ssl'])) $this->isEncrypted = true;
         $this->context = stream_context_create($context);
     }
 
