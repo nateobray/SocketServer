@@ -154,7 +154,8 @@ class SocketServer
         forEach($this->disconnectQueue as $socket) {
             $this->disconnect($socket);
         }
-    
+        // clear disconnect queue
+        $this->disconnectQueue = [];
     }
 
     /**
