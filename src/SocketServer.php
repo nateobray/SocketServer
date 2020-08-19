@@ -37,6 +37,7 @@ class SocketServer
     private $readChunkSize = 8129;
     private $maxWriteRetries = 100;
     private $eventLoopType;
+    private $lastDisconnect = 0;
     
     private $handler = NULL;
 
@@ -83,12 +84,18 @@ class SocketServer
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
             }, $this->socket);
+            $this->disconnectWatcher = $this->eventLoop->watchTimer(0, 10.0, function($w){
+                $this->disconnectSockets();
+            }, $newSocket);
             $this->eventLoop->run();
         } else {
             $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket);
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
             }, $this->socket);
+            $this->disconnectWatcher = $this->eventLoop->watchTimer(0, 10.0, function($w){
+                $this->disconnectSockets();
+            }, $newSocket);
             $this->eventLoop->run();            
         }
     }
@@ -129,13 +136,9 @@ class SocketServer
         $this->socketWriteWatchers[] = $this->eventLoop->watchTimer(0, 0.1, function($w){
             ++$this->loops;
             $this->writeSocketData($w->data);
-        }, $newSocket);
 
-        $this->socketWriteWatchers[] = $this->eventLoop->watchTimer(0, 1.0, function($w){
-            ++$this->loops;
-            $this->disconnectSockets($w->data);
         }, $newSocket);
-        
+ 
         return $newSocket;
     }
 
