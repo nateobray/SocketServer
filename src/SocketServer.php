@@ -168,14 +168,14 @@ class SocketServer
     {
         $index = array_search($socket, $this->sockets);
         $this->onDisconnect($socket);
-        $this->socketReadWatchers[$index]->stop();
-        $this->socketWriteWatchers[$index]->stop();
+        if(!empty($this->socketReadWatchers[$index])) $this->socketReadWatchers[$index]->stop();
+        if(!empty($this->socketWriteWatchers[$index])) $this->socketWriteWatchers[$index]->stop();
         stream_socket_shutdown($socket, STREAM_SHUT_RDWR);
-        unset($this->sockets[$index]);
-        unset($this->socketDataReceived[$index]);
-        unset($this->socketReadWatchers[$index]);
-        unset($this->socketWriteWatchers[$index]);
-        unset($this->socketDataToWrite[$index]);
+        if(!empty($this->sockets[$index])) unset($this->sockets[$index]);
+        if(!empty($this->socketDataReceived[$index])) unset($this->socketDataReceived[$index]);
+        if(!empty($this->socketReadWatchers[$index])) unset($this->socketReadWatchers[$index]);
+        if(!empty($this->socketWriteWatchers[$index])) unset($this->socketWriteWatchers[$index]);
+        if(!empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
         $this->onDisconnected($socket);
     }
 
