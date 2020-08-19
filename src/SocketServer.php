@@ -130,6 +130,11 @@ class SocketServer
             ++$this->loops;
             $this->writeSocketData($w->data);
         }, $newSocket);
+
+        $this->socketWriteWatchers[] = $this->eventLoop->watchTimer(0, 1.0, function($w){
+            ++$this->loops;
+            $this->disconnectSockets($w->data);
+        }, $newSocket);
         
         return $newSocket;
     }
@@ -143,9 +148,13 @@ class SocketServer
 
     private function disconnectSockets()
     {
+        // if there are no queued disconnects return
+        if(empty($this->disconnectQueue)) return;
+        // loop through queued disconnects and disconnect them
         forEach($this->disconnectQueue as $socket) {
             $this->disconnect($socket);
         }
+    
     }
 
     /**
