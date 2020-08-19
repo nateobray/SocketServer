@@ -181,6 +181,7 @@ class SocketServer
         if(!empty($this->socketWriteWatchers[$index])) unset($this->socketWriteWatchers[$index]);
         if(!empty($this->socketDataToWrite[$index])) unset($this->socketDataToWrite[$index]);
         $this->onDisconnected($socket);
+        print_r("Total connections: " . count($this->sockets) . "\n");
     }
 
     /**
