@@ -19,10 +19,10 @@ for($j=0;$j<10;++$j){
         // we are the child
         $isParent = false;
         $pid = getmypid();
-        //print_r("Connecting socket\n");
+        print_r("Connecting socket\n");
         $resource = stream_socket_client("tcp://localhost:9292");
         if($resource == false) exit();
-        for($i=0;$i<1000;++$i){
+        for($i=0;$i<100;++$i){
             //print_r("Writing to socket\n");
             $bytesWritten = fwrite($resource, "pid: " . $pid . "-" . $i . ": " . $dataToWrite . $dataToWrite . $dataToWrite . $dataToWrite . $dataToWrite . $dataToWrite . "\n\n");
             //print_r("\nData Sent (".$bytesWritten." bytes): " . $dataToWrite . "|\n");
@@ -32,6 +32,7 @@ for($j=0;$j<10;++$j){
                 //print_r("\nData Received (".mb_strlen($data)." bytes): " . $data . "|\n");
             }
         }
+        print_r("Finished\n");
         exit();
    }
    
