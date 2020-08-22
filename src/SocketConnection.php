@@ -44,7 +44,6 @@ class SocketConnection
         // set connection properties
         $this->socket = $socket;
         $this->eventLoop = $eventLoop;
-        
         $this->isConnected = true;
         //call on connected
         $this->handler->onConnected($this);
@@ -173,6 +172,13 @@ class SocketConnection
         $this->isConnected = false;
 
     }
+
+    /**
+     * isConnected
+     * 
+     * Will return the state of the underlying socket connection as tracked by this
+     * class.
+     */
 
     public function isConnected()
     {
