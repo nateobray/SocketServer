@@ -91,7 +91,7 @@ class SocketServer
     {
         // attempt to accept a new socket connection
         $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
-        if($connection !== false){ 
+        if($connection->isConnected() !== false){ 
             // start watching the connection
             $connection->run();
             // save the connection

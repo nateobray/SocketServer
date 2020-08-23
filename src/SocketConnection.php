@@ -29,14 +29,14 @@ class SocketConnection
         // handle connection failure
         if(!$socket){
             $this->handler->onConnectFailed($this);
-            return FALSE;
+            return;
         }
         // establish secure connection if required
         if($shouldSecure){
             stream_set_blocking($socket, true);
             if(!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_0_SERVER|STREAM_CRYPTO_METHOD_TLSv1_1_SERVER|STREAM_CRYPTO_METHOD_TLSv1_2_SERVER)){
                 $this->handler->onConnectFailed($this);
-                return FALSE;
+                return;
             }
         }
         // make sure socket is in non-blocking mode
@@ -183,5 +183,16 @@ class SocketConnection
     public function isConnected()
     {
         return $this->isConnected;
+    }
+
+    /**
+     * Get Socket
+     * 
+     * Gets the underlying socket connection and returns it
+     */
+
+    public function getSocket()
+    {
+        return $this->socket;
     }
 }
