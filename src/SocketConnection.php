@@ -182,4 +182,15 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
     {
         return $this->isConnected;
     }
+
+    /**
+     * Get Socket
+     * 
+     * Gets the underlying socket connection and returns it
+     */
+
+    public function getSocket()
+    {
+        return $this->socket;
+    }
 }
