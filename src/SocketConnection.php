@@ -6,14 +6,15 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 {
     private $socket;
     private $eventLoop;
-    private $readChunkSize = 8129;
+    private $readChunkSize = 8192;
     private $totalBytesRead = 0;
     private $totalBytesWritten = 0;
     private $socketDataToWrite = [];
-    private $maxWriteRetries = 100;
+    private $maxWriteRetries = 1000;
     private $handler = null;
     private $shouldDisconnect = false;
     private $isConnected = false;
+    private $retries = 0;
 
     private $writeWatcher;
     private $readWatcher;
@@ -92,7 +93,6 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
                 $shouldRead = false;
             }
             if($this->handler !== null){
-                
                 $this->handler->onData($data, $this);
             }
         }
@@ -111,17 +111,18 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         if(empty($this->socketDataToWrite)) return;
         // loop through data to write and write it the socket connection
         forEach($this->socketDataToWrite as $i => $data){
-            $retries = 0;
+            $this->retries = 0;
             while(!empty($this->socketDataToWrite[$i])){
-                $bytesWritten = @fwrite($this->socket, $this->socketDataToWrite[$i]);
-                if($bytesWritten === false || $retries > $this->maxWriteRetries ) {
+                $bytesWritten = @fwrite($this->socket, $this->socketDataToWrite[$i], $this->readChunkSize);
+                if($bytesWritten === false || $this->retries > $this->maxWriteRetries ) {
                     $this->handler->onWriteFailed($this->socketDataToWrite[$i], $this);
                     return;
                 }
                 $this->totalBytesWritten += $bytesWritten;
-                if($bytesWritten < mb_strlen($this->socketDataToWrite[$i])){
-                    ++$retries;
-                    $this->socketDataToWrite[$i] = mb_strcut($this->socketDataToWrite[$i], $bytesWritten);
+                if($bytesWritten < mb_strlen($this->socketDataToWrite[$i], '8bit')){
+                    ++$this->retries;
+                    $this->socketDataToWrite[$i] = mb_strcut($this->socketDataToWrite[$i], $bytesWritten, null, '8bit');
+                    return;
                 } else {
                     unset($this->socketDataToWrite[$i]);
                 }

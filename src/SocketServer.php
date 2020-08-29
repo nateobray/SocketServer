@@ -111,6 +111,7 @@ class SocketServer
         if(!empty($this->pool)){
             // attempt to accept a new socket connection
             $connection = new \obray\threaded\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+            print_r("got connection\n");
             if($connection->isConnected()){ 
                 // save the connection
                 $this->connections[] = $connection;
