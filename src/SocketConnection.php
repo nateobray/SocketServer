@@ -18,7 +18,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     private $writeWatcher;
     private $readWatcher;
-    
+
     public function __construct($mainSocket, $eventLoop, \obray\interfaces\SocketServerHandlerInterface $handler, bool $shouldSecure=false)
     {
         // save handler

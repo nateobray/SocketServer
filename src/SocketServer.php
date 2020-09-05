@@ -2,7 +2,7 @@
 
 namespace obray;
 
-class SocketServer 
+class SocketServer
 {
     const SELECT = 0;
     const EV = 1;
@@ -13,12 +13,12 @@ class SocketServer
     private $port;
     private $context;
     private $socket;
-    
+
     // internal
     private $eventLoopType;
     private $socketWatcher;
     private $connections = [];
-    
+
     // store handler
     private $handler = NULL;
 
@@ -64,7 +64,7 @@ class SocketServer
         if(class_exists('Pool')){
             $this->pool = new \Pool(500); 
         }
-        
+
         // start event loop
         if( $this->eventLoopType === NULL && !class_exists( '\EV' || $this->eventLoopType === EV ) ) {
             // create new event loop
@@ -88,7 +88,7 @@ class SocketServer
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
             }, $this->socket);
-            $this->eventLoop->run();            
+            $this->eventLoop->run();
         }
 
         if(!empty($this->pool)){
@@ -113,7 +113,7 @@ class SocketServer
             // attempt to accept a new socket connection
             $connection = new \obray\threaded\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
             print_r("got connection\n");
-            if($connection->isConnected()){ 
+            if($connection->isConnected()){
                 // save the connection
                 $this->connections[] = $connection;
                 // submit to the pool
@@ -126,7 +126,7 @@ class SocketServer
         } else {
             // attempt to accept a new socket connection
             $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
-            if($connection !== false){ 
+            if($connection->isConnected()){
                 // start watching the connection
                 $connection->run();
                 // save the connection
@@ -136,7 +136,6 @@ class SocketServer
             }
 
         }
-        
         return false;
     }
 
