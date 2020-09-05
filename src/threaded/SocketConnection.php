@@ -82,7 +82,6 @@ class SocketConnection extends \Volatile implements \obray\interfaces\SocketConn
     {
         // check if connect still open
         if( feof($this->socket) ){
-            
             $this->disconnect();
         } else {
             $shouldRead = true; $data = '';
@@ -102,7 +101,6 @@ class SocketConnection extends \Volatile implements \obray\interfaces\SocketConn
                 $shouldRead = false;
             }
             if($this->handler !== null){
-                
                 $this->handler->onData($data, $this);
             }
         }

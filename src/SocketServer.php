@@ -62,7 +62,7 @@ class SocketServer
         print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
 
         if(class_exists('Pool')){
-            $this->pool = new \Pool(500);
+            $this->pool = new \Pool(500); 
         }
         
         // start event loop
@@ -109,6 +109,7 @@ class SocketServer
     {
         // check if we can use threads
         if(!empty($this->pool)){
+            print_r("Attempting new connection\n");
             // attempt to accept a new socket connection
             $connection = new \obray\threaded\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
             print_r("got connection\n");
