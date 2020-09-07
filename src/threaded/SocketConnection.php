@@ -1,24 +1,23 @@
 <?php
 
-namespace obray;
+namespace obray\threaded;
 
-class SocketConnection implements \obray\interfaces\SocketConnectionInterface
+class SocketConnection extends \Volatile implements \obray\interfaces\SocketConnectionInterface
 {
     private $socket;
     private $eventLoop;
-    private $readChunkSize = 8192;
+    private $readChunkSize = 8129;
     private $totalBytesRead = 0;
     private $totalBytesWritten = 0;
     private $socketDataToWrite = [];
-    private $maxWriteRetries = 1000;
+    private $maxWriteRetries = 100;
     private $handler = null;
     private $shouldDisconnect = false;
     private $isConnected = false;
-    private $retries = 0;
 
-    private $writeWatcher;
-    private $readWatcher;
-
+    //private $writeWatcher;
+    //private $readWatcher;
+    
     public function __construct($mainSocket, $eventLoop, \obray\interfaces\SocketServerHandlerInterface $handler, bool $shouldSecure=false)
     {
         // save handler
@@ -46,20 +45,29 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         $this->socket = $socket;
         $this->eventLoop = $eventLoop;
         $this->isConnected = true;
+        $this->loop = new \EvLoop();
         //call on connected
         $this->handler->onConnected($this);
     }
 
     public function run()
     {
-        // watch for changse on our socket and fire event accordingly
-        $this->writeWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($w){
-            $this->readSocketData();
-        }, null);
+        
+        $newLoop = new \EvLoop();
+        // watch for changes on our socket and fire event accordingly
+        $readWatcher = $newLoop->io($this->socket, \Ev::READ, function($w){
+            $this->readSocketData($w);
+        });
+        
         // periodically check to see if data is available to write
-        $this->readWatcher = $this->eventLoop->watchTimer(0, 0.0001, function($w){
+        $writeWatcher = $newLoop->periodic(0, 0.0001, null, function($w){
+            //print_r("write!\n");
             $this->writeSocketData();
-        }, null);
+        });
+        
+        // run the new event loop and start checking for events
+        $newLoop->run();
+        
     }
 
     /**
@@ -70,7 +78,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
      * to onData().
      */
 
-    private function readSocketData(): void
+    private function readSocketData($w): void
     {
         // check if connect still open
         if( feof($this->socket) ){
@@ -111,18 +119,19 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         if(empty($this->socketDataToWrite)) return;
         // loop through data to write and write it the socket connection
         forEach($this->socketDataToWrite as $i => $data){
-            $this->retries = 0;
+            $retries = 0;
             while(!empty($this->socketDataToWrite[$i])){
-                $bytesWritten = @fwrite($this->socket, $this->socketDataToWrite[$i], $this->readChunkSize);
-                if($bytesWritten === false || $this->retries > $this->maxWriteRetries ) {
-                    $this->handler->onWriteFailed($this->socketDataToWrite[$i], $this);
-                    return;
+                $bytesWritten = @fwrite($this->socket, $this->socketDataToWrite[$i]);
+                if($bytesWritten === false || $retries > $this->maxWriteRetries ) {
+                    if($this->handler !== null){
+                        $this->handler->onWriteFailed($this->socketDataToWrite[$i], $this);
+                    }
+                    break;
                 }
                 $this->totalBytesWritten += $bytesWritten;
-                if($bytesWritten < mb_strlen($this->socketDataToWrite[$i], '8bit')){
-                    ++$this->retries;
-                    $this->socketDataToWrite[$i] = mb_strcut($this->socketDataToWrite[$i], $bytesWritten, null, '8bit');
-                    return;
+                if($bytesWritten < mb_strlen($this->socketDataToWrite[$i])){
+                    ++$retries;
+                    $this->socketDataToWrite[$i] = mb_strcut($this->socketDataToWrite[$i], $bytesWritten);
                 } else {
                     unset($this->socketDataToWrite[$i]);
                 }
@@ -164,11 +173,13 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     public function disconnect()
     {
+        //\Ev::stop();
         print_r("Disconnected.\n");
         stream_socket_shutdown($this->socket, STREAM_SHUT_RDWR);
         $this->writeWatcher = null;
         $this->readWatcher = null;
         $this->isConnected = false;
+        exit();
 
     }
 
@@ -182,16 +193,5 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
     public function isConnected()
     {
         return $this->isConnected;
-    }
-
-    /**
-     * Get Socket
-     * 
-     * Gets the underlying socket connection and returns it
-     */
-
-    public function getSocket()
-    {
-        return $this->socket;
     }
 }

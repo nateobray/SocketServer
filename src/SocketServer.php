@@ -2,7 +2,7 @@
 
 namespace obray;
 
-class SocketServer 
+class SocketServer
 {
     const SELECT = 0;
     const EV = 1;
@@ -13,14 +13,17 @@ class SocketServer
     private $port;
     private $context;
     private $socket;
-    
+
     // internal
     private $eventLoopType;
     private $socketWatcher;
     private $connections = [];
-    
+
     // store handler
     private $handler = NULL;
+
+    // parallel
+    private $pool;
 
     /**
      * Constructor
@@ -57,7 +60,11 @@ class SocketServer
 			throw new \Exception("Unable to bind to ".$this->host.":".$this->port." over ".$this->protocol."\n");
         }
         print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
-        
+
+        if(class_exists('Pool')){
+            $this->pool = new \Pool(500); 
+        }
+
         // start event loop
         if( $this->eventLoopType === NULL && !class_exists( '\EV' || $this->eventLoopType === EV ) ) {
             // create new event loop
@@ -65,6 +72,12 @@ class SocketServer
             // add watcher for new connections
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
+            }, $this->socket);
+            $this->disconnectWatcher = $this->eventLoop->watchTimer(0, 10, function($watcher){
+                forEach($this->connections as $index => $connection){
+                    if(!$this->connections[$index]->isConnected()) unset($this->connections[$index]);
+                }
+                print_r("Total connections: " . count($this->connections) . "\n");
             }, $this->socket);
             // run the event loop
             $this->eventLoop->run();
@@ -75,7 +88,12 @@ class SocketServer
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
             }, $this->socket);
-            $this->eventLoop->run();            
+            $this->eventLoop->run();
+        }
+
+        if(!empty($this->pool)){
+            while ($this->pool->collect());
+            $this->pool->shutdown();
         }
     }
 
@@ -89,17 +107,35 @@ class SocketServer
 
     private function connectNewSockets($socket)
     {
-        // attempt to accept a new socket connection
-        $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
-        if($connection !== false){ 
-            // start watching the connection
-            $connection->run();
-            // save the connection
-            $this->connections[] = $connection;
-            // return true on success
-            return true;
+        // check if we can use threads
+        if(!empty($this->pool)){
+            print_r("Attempting new connection\n");
+            // attempt to accept a new socket connection
+            $connection = new \obray\threaded\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+            print_r("got connection\n");
+            if($connection->isConnected()){
+                // save the connection
+                $this->connections[] = $connection;
+                // submit to the pool
+                $this->pool->submit($connection);
+                // start watching the connection
+                //$connection->run();
+                // return true on success
+                return true;
+            }
+        } else {
+            // attempt to accept a new socket connection
+            $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+            if($connection->isConnected()){
+                // start watching the connection
+                $connection->run();
+                // save the connection
+                $this->connections[] = $connection;
+                // return true on success
+                return true;
+            }
+
         }
-        // return false on failure
         return false;
     }
 
