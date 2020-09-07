@@ -184,4 +184,15 @@ class SocketConnection
     {
         return $this->isConnected;
     }
+
+    /**
+     * Get Socket
+     * 
+     * Retreives the underlying socket connection
+     */
+    
+    public function getSocket()
+    {
+        return $this->socket;
+    }
 }
