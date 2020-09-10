@@ -30,6 +30,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         // handle connection failure
         if(!$socket){
             $this->handler->onConnectFailed($this);
+            $this->disconnect();
             return;
         }
         // establish secure connection if required
@@ -37,6 +38,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
             stream_set_blocking($socket, true);
             if(!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_0_SERVER|STREAM_CRYPTO_METHOD_TLSv1_1_SERVER|STREAM_CRYPTO_METHOD_TLSv1_2_SERVER)){
                 $this->handler->onConnectFailed($this);
+                $this->disconnect();
                 return;
             }
         }
@@ -107,7 +109,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     private function writeSocketData(): void
     {
-        // if no data vailable to write return
+        // if no data available to write return
         if(empty($this->socketDataToWrite)) return;
         // loop through data to write and write it the socket connection
         forEach($this->socketDataToWrite as $i => $data){
@@ -169,7 +171,6 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         $this->writeWatcher = null;
         $this->readWatcher = null;
         $this->isConnected = false;
-
     }
 
     /**
