@@ -17,4 +17,9 @@ class EVLoop implements \obray\interfaces\EventLoopInterface
     {
         return new \EvTimer($delay, $interval, $callback, $data);
     }
+
+    public function stop()
+    {
+        \EV::stop();
+    }
 }

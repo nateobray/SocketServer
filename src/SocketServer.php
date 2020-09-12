@@ -25,10 +25,6 @@ class SocketServer
     // parallel
     private $pool;
 
-    // error variables
-    private $errorNo;
-    private $errorMessage;
-
     /**
      * Constructor
      * 
@@ -102,9 +98,7 @@ class SocketServer
             $this->eventLoop = new \obray\eventLoops\EVLoop();
             // add watcher for new connections
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
-                
                 $this->connectNewSockets($watcher->data);
-                
             }, $this->socket);
             // add watcher for cleaning up disconnected connections from the main connection list
             $this->disconnectWatcher = $this->eventLoop->watchTimer(0, 10, function($watcher){
@@ -159,7 +153,26 @@ class SocketServer
             }
         } else {
             // attempt to accept a new socket connection
-            $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+            try {
+                $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+
+            // on main socket failure attempt to restart the server
+            } catch (\obray\exceptions\SocketFailureException $e) {
+                // stop existing watcher
+                $this->mainWatcher->stop();
+                // stop the main event loop
+                $this->eventLoop->stop();
+                // re-bind and start the server
+                try {
+                    $this->serve();
+                } catch (\Exception $e) {
+                    print_r("terminate the server\n");
+                    exit(1);
+                }
+                // restart the watchers and event loop
+                $this->watch();
+                exit(1);
+            }
             if($connection->isConnected()){
                 $this->numFailedConnections = 0;
                 // start watching the connection
@@ -212,8 +225,7 @@ class SocketServer
                 if($errstr == 'stream_socket_accept(): accept failed: Invalid argument'){
                     print_r("\n\n");
                     print_r("Error: (".$errno.") " . $errstr . "\n");
-                    // attempt restart
-                    exit();
+                    throw new \obray\exceptions\SocketFailureException();
                 }
             break;
         }
