@@ -25,8 +25,13 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         $this->handler = $handler;
         // call handler on connect
         $this->handler->onConnect($this);
+        print_r("Creating new connection");
         // attempting to connect new socket
-        $socket = stream_socket_accept($mainSocket,1);
+        try {
+            $socket = stream_socket_accept($mainSocket,1);
+        } catch (\obray\SocketFailureException $e) {
+            return;
+        }
         // handle connection failure
         if(!$socket){
             $this->handler->onConnectFailed($this);
