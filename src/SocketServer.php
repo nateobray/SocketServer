@@ -42,7 +42,7 @@ class SocketServer
             $this->context = new \obray\StreamContext();
         }
 
-        set_error_handler([$this, 'errorHandler'], E_WARNING);
+        set_error_handler([$this, 'errorHandler'], E_WARNING & E_NOTICE & E_PARSE);
     }
 
     /**
@@ -173,6 +173,8 @@ class SocketServer
                 $this->watch();
                 exit(1);
             }
+
+            // if we get a successful client connection
             if($connection->isConnected()){
                 $this->numFailedConnections = 0;
                 // start watching the connection
@@ -181,6 +183,13 @@ class SocketServer
                 $this->connections[] = $connection;
                 // return true on success
                 return true;
+            } else {
+                ++$this->numFailedConnections;
+            }
+
+            // if failed connections gets out of hand, exit the server
+            if($this->numFailedConnections > 10000){
+                exit(1);
             }
         }
         return false;
@@ -219,14 +228,18 @@ class SocketServer
     public function errorHandler(int $errno ,string $errstr, string $errfile, int $errline, array $errcontext)
     {
         switch($errno){
-            default:
-                print_r("(".$errno.") " . $errstr . "\n");
+            // and warnings
             case E_WARNING:
+                print_r("(".$errno.") " . $errstr . "\n");
                 if($errstr == 'stream_socket_accept(): accept failed: Invalid argument'){
                     print_r("\n\n");
                     print_r("Error: (".$errno.") " . $errstr . "\n");
                     throw new \obray\exceptions\SocketFailureException();
                 }
+            break;
+            // print everything else to screen
+            default:
+                print_r("(".$errno.") " . $errstr . "\n");
             break;
         }
         
