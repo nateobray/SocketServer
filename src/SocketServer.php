@@ -189,6 +189,19 @@ class SocketServer
 
             // if failed connections gets out of hand, exit the server
             if($this->numFailedConnections > 10000){
+                // stop existing watcher
+                $this->mainWatcher->stop();
+                // stop the main event loop
+                $this->eventLoop->stop();
+                // re-bind and start the server
+                try {
+                    $this->serve();
+                } catch (\Exception $e) {
+                    print_r("terminate the server\n");
+                    exit(1);
+                }
+                // restart the watchers and event loop
+                $this->watch();
                 exit(1);
             }
         }
