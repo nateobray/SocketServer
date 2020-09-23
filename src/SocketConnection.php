@@ -151,7 +151,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
      * Q Disconnect
      * 
      * Determines if this connection should terminate after writing all the data
-     * it has available to write.
+     * it has available to write. 
      */
 
     public function qDisconnect()
@@ -164,12 +164,20 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
      * 
      * Shuts down the socket connection and prevents and addtional reads and writes
      * to that socket.  Also removes it from the list of sockets and socket data
+     * 
+     * Nate: fclose seems to correctly close down client connections and not leave
+     * a file descriptor on the system.  stream_socket_shutdown appears to 
+     * shutdown the connection but leaves the file descriptor.  Had an issue
+     * with those slowly building until it would finally fail when the system
+     * would run out of file descriptors.
+     * 
      */
 
     public function disconnect()
     {
         print_r("Disconnected.\n");
-        stream_socket_shutdown($this->socket, STREAM_SHUT_RDWR);
+        fclose($this->socket); 
+        //stream_socket_shutdown($this->socket, STREAM_SHUT_RDWR);
         $this->writeWatcher = null;
         $this->readWatcher = null;
         $this->isConnected = false;

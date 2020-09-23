@@ -248,6 +248,10 @@ class SocketServer
                     print_r("\n\n");
                     print_r("Error: (".$errno.") " . $errstr . "\n");
                     throw new \obray\exceptions\SocketFailureException();
+                } else if (strpos($errstr, "stream_socket_accept(): accept failed: Too many open files in") !== false){
+                    print_r("\n\n");
+                    print_r("Error: (".$errno.") " . $errstr . "\n");
+                    throw new \obray\exceptions\SocketFailureException();
                 }
             break;
             // print everything else to screen
