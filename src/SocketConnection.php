@@ -165,7 +165,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
     public function disconnect()
     {
         print_r("Disconnected.\n");
-        stream_socket_shutdown($this->socket, STREAM_SHUT_RDWR);
+        fclose($this->socket);
         $this->writeWatcher = null;
         $this->readWatcher = null;
         $this->isConnected = false;
