@@ -119,9 +119,9 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
                     return;
                 }
                 $this->totalBytesWritten += $bytesWritten;
-                if($bytesWritten < mb_strlen($this->socketDataToWrite[$i], '8bit')){
+                if($bytesWritten < strlen($this->socketDataToWrite[$i])){
                     ++$this->retries;
-                    $this->socketDataToWrite[$i] = mb_strcut($this->socketDataToWrite[$i], $bytesWritten, null, '8bit');
+                    $this->socketDataToWrite[$i] = substr($this->socketDataToWrite[$i], $bytesWritten, null);
                     return;
                 } else {
                     unset($this->socketDataToWrite[$i]);
