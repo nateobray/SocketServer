@@ -41,6 +41,8 @@ class SocketServer
         if($this->context == NULL){
             $this->context = new \obray\StreamContext();
         }
+
+        set_error_handler([$this, 'errorHandler'], E_WARNING & E_NOTICE & E_PARSE);
     }
 
     /**
@@ -53,14 +55,39 @@ class SocketServer
     public function start(\obray\interfaces\SocketServerHandlerInterface $handler)
     {
         $this->handler = $handler;
-        $errno = 0; $errstr = '';
+        // start the server
+        $this->serve();
+        // start watching connections
+        $this->watch();
+    }
+
+    /**
+     * Serve
+     * 
+     * Simply binds a socket to a host and port.
+     */
+
+    private function serve()
+    {
         $listenstr = $this->protocol."://".$this->host.":".$this->port;
-        $this->socket = @stream_socket_server($listenstr,$errno,$errstr,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN,$this->context->get());
+        print_r("Connecting: " . $listenstr . "\n");
+        $this->socket = stream_socket_server($listenstr, $this->errorNo,$this->errorMessage,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN,$this->context->get());
         if( !is_resource($this->socket) ){
-			throw new \Exception("Unable to bind to ".$this->host.":".$this->port." over ".$this->protocol."\n");
+			throw new \Exception("Unable to bind to ".$this->host.":".$this->port." over ".$this->protocol.": " . $this->errorMessage . "\n");
         }
         print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
+        return true;
+    }
 
+    /**
+     * Watch
+     * 
+     * Starts watch for network activity on main socket and establishes new connections
+     * when it encounters some.
+     */
+
+    private function watch()
+    {
         if(class_exists('Pool')){
             $this->pool = new \Pool(500); 
         }
@@ -73,6 +100,7 @@ class SocketServer
             $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
                 $this->connectNewSockets($watcher->data);
             }, $this->socket);
+            // add watcher for cleaning up disconnected connections from the main connection list
             $this->disconnectWatcher = $this->eventLoop->watchTimer(0, 10, function($watcher){
                 forEach($this->connections as $index => $connection){
                     if(!$this->connections[$index]->isConnected()) unset($this->connections[$index]);
@@ -125,16 +153,57 @@ class SocketServer
             }
         } else {
             // attempt to accept a new socket connection
-            $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+            try {
+                $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+
+            // on main socket failure attempt to restart the server
+            } catch (\obray\exceptions\SocketFailureException $e) {
+                // stop existing watcher
+                $this->mainWatcher->stop();
+                // stop the main event loop
+                $this->eventLoop->stop();
+                // re-bind and start the server
+                try {
+                    $this->serve();
+                } catch (\Exception $e) {
+                    print_r("terminate the server\n");
+                    exit(1);
+                }
+                // restart the watchers and event loop
+                $this->watch();
+                exit(1);
+            }
+
+            // if we get a successful client connection
             if($connection->isConnected()){
+                $this->numFailedConnections = 0;
                 // start watching the connection
                 $connection->run();
                 // save the connection
                 $this->connections[] = $connection;
                 // return true on success
                 return true;
+            } else {
+                ++$this->numFailedConnections;
             }
 
+            // if failed connections gets out of hand, exit the server
+            if($this->numFailedConnections > 10000){
+                // stop existing watcher
+                $this->mainWatcher->stop();
+                // stop the main event loop
+                $this->eventLoop->stop();
+                // re-bind and start the server
+                try {
+                    $this->serve();
+                } catch (\Exception $e) {
+                    print_r("terminate the server\n");
+                    exit(1);
+                }
+                // restart the watchers and event loop
+                $this->watch();
+                exit(1);
+            }
         }
         return false;
     }
@@ -160,5 +229,36 @@ class SocketServer
     public function setEventLoopType(int $eventLoopType)
     {
         $this->eventLoopType = $eventLoopType;
+    }
+
+    /**
+     * Custom Error Handler
+     * 
+     * There seems to be a case when we loose our main socket connection that we need to terminate the
+     * server
+     */
+
+    public function errorHandler(int $errno ,string $errstr, string $errfile, int $errline, array $errcontext)
+    {
+        switch($errno){
+            // and warnings
+            case E_WARNING:
+                print_r("(".$errno.") " . $errstr . "\n");
+                if($errstr == 'stream_socket_accept(): accept failed: Invalid argument'){
+                    print_r("\n\n");
+                    print_r("Error: (".$errno.") " . $errstr . "\n");
+                    throw new \obray\exceptions\SocketFailureException();
+                } else if (strpos($errstr, "stream_socket_accept(): accept failed: Too many open files in") !== false){
+                    print_r("\n\n");
+                    print_r("Error: (".$errno.") " . $errstr . "\n");
+                    throw new \obray\exceptions\SocketFailureException();
+                }
+            break;
+            // print everything else to screen
+            default:
+                print_r("(".$errno.") " . $errstr . "\n");
+            break;
+        }
+        
     }
 }

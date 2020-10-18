@@ -25,11 +25,14 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         $this->handler = $handler;
         // call handler on connect
         $this->handler->onConnect($this);
+        print_r("Creating new connection");
         // attempting to connect new socket
-        $socket = @stream_socket_accept($mainSocket,1);
+        $socket = stream_socket_accept($mainSocket,1);
+        
         // handle connection failure
         if(!$socket){
             $this->handler->onConnectFailed($this);
+            $this->disconnect();
             return;
         }
         // establish secure connection if required
@@ -37,6 +40,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
             stream_set_blocking($socket, true);
             if(!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_0_SERVER|STREAM_CRYPTO_METHOD_TLSv1_1_SERVER|STREAM_CRYPTO_METHOD_TLSv1_2_SERVER)){
                 $this->handler->onConnectFailed($this);
+                $this->disconnect();
                 return;
             }
         }
@@ -107,7 +111,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     private function writeSocketData(): void
     {
-        // if no data vailable to write return
+        // if no data available to write return
         if(empty($this->socketDataToWrite)) return;
         // loop through data to write and write it the socket connection
         forEach($this->socketDataToWrite as $i => $data){
@@ -147,7 +151,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
      * Q Disconnect
      * 
      * Determines if this connection should terminate after writing all the data
-     * it has available to write.
+     * it has available to write. 
      */
 
     public function qDisconnect()
@@ -160,16 +164,23 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
      * 
      * Shuts down the socket connection and prevents and addtional reads and writes
      * to that socket.  Also removes it from the list of sockets and socket data
+     * 
+     * Nate: fclose seems to correctly close down client connections and not leave
+     * a file descriptor on the system.  stream_socket_shutdown appears to 
+     * shutdown the connection but leaves the file descriptor.  Had an issue
+     * with those slowly building until it would finally fail when the system
+     * would run out of file descriptors.
+     * 
      */
 
     public function disconnect()
     {
         print_r("Disconnected.\n");
-        stream_socket_shutdown($this->socket, STREAM_SHUT_RDWR);
+        fclose($this->socket); 
+        //stream_socket_shutdown($this->socket, STREAM_SHUT_RDWR);
         $this->writeWatcher = null;
         $this->readWatcher = null;
         $this->isConnected = false;
-
     }
 
     /**
