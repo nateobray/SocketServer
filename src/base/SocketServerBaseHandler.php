@@ -3,6 +3,12 @@ namespace obray\base;
 
 class SocketServerBaseHandler implements \obray\interfaces\SocketServerHandlerInterface
 {
+
+    public function onStart(\obray\SocketServer $connection): void
+    {
+        return;
+    }
+
     public function onData(string $data, \obray\interfaces\SocketConnectionInterface $connection): void
     {
         $connection->qWrite($data);

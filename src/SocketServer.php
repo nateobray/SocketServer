@@ -57,6 +57,16 @@ class SocketServer
         $this->handler = $handler;
         // start the server
         $this->serve();
+        
+        if( $this->eventLoopType === NULL && !class_exists( '\EV' || $this->eventLoopType === EV ) ) {
+            $this->eventLoop = new \obray\eventLoops\EVLoop();
+        } else {
+            $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket);
+        }
+
+        // call on start
+        $this->handler->onStart($this);
+
         // start watching connections
         $this->watch();
     }
@@ -91,33 +101,22 @@ class SocketServer
         if(class_exists('Pool')){
             $this->pool = new \Pool(500); 
         }
-
-        // start event loop
-        if( $this->eventLoopType === NULL && !class_exists( '\EV' || $this->eventLoopType === EV ) ) {
-            // create new event loop
-            $this->eventLoop = new \obray\eventLoops\EVLoop();
-            // add watcher for new connections
-            $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
-                $this->connectNewSockets($watcher->data);
-            }, $this->socket);
-            // add watcher for cleaning up disconnected connections from the main connection list
-            $this->disconnectWatcher = $this->eventLoop->watchTimer(0, 10, function($watcher){
-                forEach($this->connections as $index => $connection){
-                    if(!$this->connections[$index]->isConnected()) unset($this->connections[$index]);
-                }
-                print_r("Total connections: " . count($this->connections) . "\n");
-            }, $this->socket);
-            // run the event loop
-            $this->eventLoop->run();
-
-        // start stream select loop
-        } else {
-            $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket);
-            $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
-                $this->connectNewSockets($watcher->data);
-            }, $this->socket);
-            $this->eventLoop->run();
-        }
+        
+        // create new event loop
+        $this->eventLoop = new \obray\eventLoops\EVLoop();
+        // add watcher for new connections
+        $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
+            $this->connectNewSockets($watcher->data);
+        }, $this->socket);
+        // add watcher for cleaning up disconnected connections from the main connection list
+        $this->disconnectWatcher = $this->eventLoop->watchTimer(0, 10, function($watcher){
+            forEach($this->connections as $index => $connection){
+                if(!$this->connections[$index]->isConnected()) unset($this->connections[$index]);
+            }
+            print_r("Total connections: " . count($this->connections) . "\n");
+        }, $this->socket);
+        // run the event loop
+        $this->eventLoop->run();
 
         if(!empty($this->pool)){
             while ($this->pool->collect());
