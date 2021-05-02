@@ -19,14 +19,19 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
     private $writeWatcher;
     private $readWatcher;
 
-    public function __construct($mainSocket, $eventLoop, \obray\interfaces\SocketServerHandlerInterface $handler, bool $shouldSecure=false)
+    public function __construct($mainSocket, $eventLoop, \obray\interfaces\SocketServerHandlerInterface $handler, bool $shouldSecure=false, bool $isServer=true)
     {
         // save handler
         $this->handler = $handler;
         // call handler on connect
         $this->handler->onConnect($this);
         // attempting to connect new socket
-        $socket = @stream_socket_accept($mainSocket,1);
+        if($isServer){
+            $socket = @stream_socket_accept($mainSocket,1);
+        } else {
+            $socket = $mainSocket;
+        }
+        
         // handle connection failure
         if(!$socket){
             $this->handler->onConnectFailed($this);
