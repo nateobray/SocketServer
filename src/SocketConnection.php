@@ -77,7 +77,6 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     public function setReadMethod(int $readMethod): void
     {
-        print_r("SETTING READ METHOD\n");
         if(!in_array($readMethod, [0, 1, 2, 3])) throw new \Exception("Invalid read method specified.");
         $this->readMethod = $readMethod;
     }
@@ -148,7 +147,6 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
                 if(feof($this->socket) && $this->readMethod === self::READ_UNTIL_CONNECTION_CLOSED) $shouldRead = false;
                 if(empty($newData) && $this->readMethod === self::READ_UNTIL_EMPTY) $shouldRead = false;
                 if(mb_strlen($data, '8bit') === $lengthNeeded){
-                    print_r("Read all data\n");
                     $shouldRead = false;
                 }
             }
@@ -225,7 +223,6 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     public function disconnect()
     {
-        print_r("Disconnected.\n");
         fclose($this->socket);
         $this->writeWatcher = null;
         $this->readWatcher = null;
