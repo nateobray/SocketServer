@@ -5,7 +5,7 @@ namespace obray\interfaces;
 interface SocketServerHandlerInterface 
 {
     public function onStart(\obray\SocketServer $connection): void;
-    public function onData(string $data, \obray\interfaces\SocketConnectionInterface $connection): void;
+    public function onData(string $data, int $readLength, \obray\interfaces\SocketConnectionInterface $connection);
     public function onConnect(\obray\interfaces\SocketConnectionInterface $connection): void;
     public function onConnected(\obray\interfaces\SocketConnectionInterface $connection): void;
     public function onConnectFailed(\obray\interfaces\SocketConnectionInterface $connection): void;

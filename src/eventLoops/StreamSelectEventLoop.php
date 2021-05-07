@@ -7,9 +7,13 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
     private $socketWatchers = [];
     private $socketWatchersSockets = [];
     private $timerWatchers = [];
+    private $runLoop = true;
 
     public function __construct($socket)
     {
+        if($socket === null) {
+            $this->socket = stream_socket_client ( "tcp://localhost" , $errNo , $errMessage, 30, STREAM_CLIENT_CONNECT);
+        }
         $this->socket = $socket;
     }
 
@@ -22,10 +26,10 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
     public function run()
     {
         $sockets = [];
-        while(true){
+        while($this->runLoop){
             $changed = $this->socketWatchersSockets; $null = NULL;
             $changed[] = $this->socket;
-            stream_select( $changed, $null, $null, 0, 0);
+            @stream_select( $changed, $null, $null, 0, 0);
 
             // call callbacks for changed sockets
             forEach($changed as $socket){
@@ -53,6 +57,11 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
             time_nanosleep(0, 100);
         }
         return true;
+    }
+
+    public function stop()
+    {
+        $this->runLoop = false;
     }
 
     /**
