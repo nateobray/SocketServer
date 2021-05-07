@@ -11,9 +11,6 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
 
     public function __construct($socket)
     {
-        if($socket === null) {
-            $this->socket = stream_socket_client ( "tcp://localhost" , $errNo , $errMessage, 30, STREAM_CLIENT_CONNECT);
-        }
         $this->socket = $socket;
     }
 
@@ -34,7 +31,7 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
             // call callbacks for changed sockets
             forEach($changed as $socket){
                 $index = \array_search($socket, $this->socketWatchersSockets);
-                if($this->socketWatchers[$index]->isActive === false){
+                if(!empty($this->socketWatchers[$index]) && $this->socketWatchers[$index]->isActive === false){
                     unset($this->socketWatchers[$index]);
                     unset($this->socketWatchersSockets[$index]);
                     continue;
