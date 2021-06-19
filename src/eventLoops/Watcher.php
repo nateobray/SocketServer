@@ -49,16 +49,15 @@ class Watcher
     public function shouldInvoke(): bool
     {
         $currentTime = microtime(true);
+        // first call
         if($this->lastCall === 0 && $currentTime - $this->started > $this->delay){
-            print_r("should invoke (first call): true\n");
             return true;
         }
-
+        // subsequent calls
         if(($currentTime - $this->lastCall) > $this->interval){
-            print_r("should invoke (subsequent call) elapsed: " . ($currentTime - $this->lastCall) . "s\n");
             return true;
         }
-
+        
         return false;
     }
 }

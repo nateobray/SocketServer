@@ -9,9 +9,12 @@ class SocketServerBaseHandler implements \obray\interfaces\SocketServerHandlerIn
         return;
     }
 
-    public function onData(string $data, \obray\interfaces\SocketConnectionInterface $connection): void
+    public function onData(string $data, int $readLength, \obray\interfaces\SocketConnectionInterface $connection)
     {
+        // write some data to the socket
         $connection->qWrite($data);
+        // return false, don't read any more (discard remaining data on the socket)
+        return false;
     }
 
     public function onConnect(\obray\interfaces\SocketConnectionInterface $connection): void

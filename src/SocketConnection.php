@@ -4,6 +4,11 @@ namespace obray;
 
 class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 {
+    const READ_UNTIL_EMPTY = 0;
+    const READ_UNTIL_CONNECTION_CLOSED = 1;
+    const READ_UNTIL_LINE_ENDING = 2;
+    const READ_UNTIL_LENGTH = 3;
+
     private $socket;
     private $eventLoop;
     private $readChunkSize = 8192;
@@ -16,17 +21,26 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
     private $isConnected = false;
     private $retries = 0;
 
+    private $readMethod = 0;
+    private $readEOL = "\n";
+    private $initialReadLength = 8192;
+
     private $writeWatcher;
     private $readWatcher;
 
-    public function __construct($mainSocket, $eventLoop, \obray\interfaces\SocketServerHandlerInterface $handler, bool $shouldSecure=false)
+    public function __construct($mainSocket, $eventLoop, \obray\interfaces\SocketServerHandlerInterface $handler, bool $shouldSecure=false, bool $isServer=true, int $readMethod=self::READ_UNTIL_EMPTY)
     {
         // save handler
         $this->handler = $handler;
         // call handler on connect
         $this->handler->onConnect($this);
         // attempting to connect new socket
-        $socket = @stream_socket_accept($mainSocket,1);
+        if($isServer){
+            $socket = @stream_socket_accept($mainSocket,1);
+        } else {
+            $socket = $mainSocket;
+        }
+        
         // handle connection failure
         if(!$socket){
             $this->handler->onConnectFailed($this);
@@ -46,8 +60,25 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         $this->socket = $socket;
         $this->eventLoop = $eventLoop;
         $this->isConnected = true;
+        $this->readMethod = $readMethod;
         //call on connected
         $this->handler->onConnected($this);
+    }
+
+    public function setInitialReadSize(int $initialReadSize): void
+    {
+        $this->initialReadSize = $initialReadSize;
+    }
+
+    public function setEOL(string $eol): void
+    {
+        $this->readEOL = $eol;
+    }
+
+    public function setReadMethod(int $readMethod): void
+    {
+        if(!in_array($readMethod, [0, 1, 2, 3])) throw new \Exception("Invalid read method specified.");
+        $this->readMethod = $readMethod;
     }
 
     public function run()
@@ -76,25 +107,53 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
         if( feof($this->socket) ){
             $this->disconnect();
         } else {
-            $shouldRead = true; $data = '';
+            $shouldRead = true; $data = ''; $readLength = $this->readChunkSize; $lengthNeed = false; $readRetries = 0;
+            if($this->readMethod === self::READ_UNTIL_LENGTH){
+                $readLength = $this->initialReadLength;
+            }
             while($shouldRead){
-                // read from socket
-                $newData = @fread($this->socket, $this->readChunkSize);
+
+                // read from socket until line delimeter
+                if($this->readMethod === self::READ_UNTIL_LINE_ENDING){
+                    $newData = stream_get_line($this->socket, $readLength, $this->readEOL);
+                // read form socket length of readLength
+                } else {
+                    $newData = @fread($this->socket, $readLength);
+                }
+
+                if(feof($this->socket)) {
+                    $data .= $newData;
+                    $this->handler->onData($data, mb_strlen($data, '8bit'), $this);
+                    return;
+                }
+                
                 // handle error condition
                 if($newData === false){ 
-                    if($this->handler !== null){
+                    if($readRetries > 10 && $this->handler !== null){
                         $this->handler->onReadFailed($this);
                     }
                     continue;
                 }
-                $data .= $newData;
+
+                if(in_array($this->readMethod, [self::READ_UNTIL_LINE_ENDING]) && $this->handler !== null) {
+                    $lengthNeeded = $this->handler->onData($newData, $readLength, $this);
+                    $data = '';
+                    if( $lengthNeeded === false) return;
+                } else {
+                    $data .= $newData;
+                }
+
                 $this->totalBytesRead += mb_strlen($newData, '8bit');
-                if(stream_get_meta_data($this->socket)['unread_bytes'] > 0) continue;
-                $shouldRead = false;
+                if(feof($this->socket) && $this->readMethod === self::READ_UNTIL_CONNECTION_CLOSED) $shouldRead = false;
+                if(empty($newData) && $this->readMethod === self::READ_UNTIL_EMPTY) $shouldRead = false;
+                if(mb_strlen($data, '8bit') === $lengthNeeded){
+                    $shouldRead = false;
+                }
             }
-            if($this->handler !== null){
-                $this->handler->onData($data, $this);
+            if($this->handler !== null && in_array($this->readMethod, [self::READ_UNTIL_CONNECTION_CLOSED, self::READ_UNTIL_EMPTY, self::READ_UNTIL_LENGTH])){
+                $this->handler->onData($data, mb_strlen($data, '8bit'), $this);
             }
+
         }
     }
 
@@ -164,7 +223,6 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     public function disconnect()
     {
-        print_r("Disconnected.\n");
         fclose($this->socket);
         $this->writeWatcher = null;
         $this->readWatcher = null;
