@@ -104,7 +104,7 @@ class SocketServer
         
         // create new event loop
         $this->eventLoop = new \obray\eventLoops\EVLoop();
-        // add watcher for new connections
+        // add watcher for new connectionszz
         $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
             $this->connectNewSockets($watcher->data);
         }, $this->socket);
