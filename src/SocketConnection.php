@@ -146,7 +146,7 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
                 $this->totalBytesRead += mb_strlen($newData, '8bit');
                 if(feof($this->socket) && $this->readMethod === self::READ_UNTIL_CONNECTION_CLOSED) $shouldRead = false;
                 if(empty($newData) && $this->readMethod === self::READ_UNTIL_EMPTY) $shouldRead = false;
-                if(mb_strlen($data, '8bit') === $lengthNeeded){
+                if(!empty($lengthNeeded) && mb_strlen($data, '8bit') === $lengthNeeded){
                     $shouldRead = false;
                 }
             }
