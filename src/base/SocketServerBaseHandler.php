@@ -3,6 +3,12 @@ namespace obray\base;
 
 class SocketServerBaseHandler implements \obray\interfaces\SocketServerHandlerInterface
 {
+    private $logger;
+
+    public function __construct(callable $logger = null)
+    {
+        $this->logger = $logger;
+    }
 
     public function onStart(\obray\SocketServer $connection): void
     {
@@ -19,38 +25,45 @@ class SocketServerBaseHandler implements \obray\interfaces\SocketServerHandlerIn
 
     public function onConnect(\obray\interfaces\SocketConnectionInterface $connection): void
     {
-        print_r("Connecting...");
+        $this->log("Connecting.");
     }
 
     public function onConnected(\obray\interfaces\SocketConnectionInterface $connection): void
     {
-        print_r("success\n");
+        $this->log("Connected.");
     }
 
     public function onConnectFailed(\obray\interfaces\SocketConnectionInterface $connection): void
     {
-        print_r("failed!\n");
+        $this->log("Connection failed.");
     }
 
     public function onWriteFailed($data, \obray\interfaces\SocketConnectionInterface $connection): void
     {
-        print_r("Write failed!\n");
+        $this->log("Write failed.");
         $connection->disconnect();
     }
 
     public function onReadFailed(\obray\interfaces\SocketConnectionInterface $connection): void
     {
-        print_r("Read failed!\n");
+        $this->log("Read failed.");
         $connection->disconnect();
     }
 
     public function onDisconnect(\obray\interfaces\SocketConnectionInterface $connection): void
     {
-        print_r("disconnecting....");
+        $this->log("Disconnecting.");
     }
 
     public function onDisconnected(\obray\interfaces\SocketConnectionInterface $connection): void
     {
-        print_r("success\n");
+        $this->log("Disconnected.");
+    }
+
+    private function log(string $message): void
+    {
+        if($this->logger !== null){
+            ($this->logger)($message);
+        }
     }
 }

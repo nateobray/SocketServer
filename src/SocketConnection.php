@@ -129,8 +129,10 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
                 
                 // handle error condition
                 if($newData === false){ 
+                    ++$readRetries;
                     if($readRetries > 10 && $this->handler !== null){
                         $this->handler->onReadFailed($this);
+                        return;
                     }
                     continue;
                 }

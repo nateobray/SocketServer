@@ -2,7 +2,7 @@
 
 namespace obray\interfaces;
 
-interface SocketServerHandlerInterface 
+interface WatcherInterface
 {
     public function stop();
 }

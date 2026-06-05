@@ -3,11 +3,12 @@ namespace obray\eventLoops;
 
 class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
 {
-    private $sockets;
     private $socketWatchers = [];
     private $socketWatchersSockets = [];
     private $timerWatchers = [];
     private $runLoop = true;
+    private $selectTimeoutSeconds = 0;
+    private $selectTimeoutMicroseconds = 10000;
 
     public function __construct($socket)
     {
@@ -22,7 +23,6 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
 
     public function run()
     {
-        $sockets = [];
         while($this->runLoop){
             forEach($this->socketWatchersSockets as $index => $socket){
                 if(!is_resource($socket) || empty($this->socketWatchers[$index]) || $this->socketWatchers[$index]->isActive === false){
@@ -36,11 +36,11 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
                 $changed[] = $this->socket;
             }
             if(empty($changed)){
-                time_nanosleep(0, 100);
+                usleep($this->selectTimeoutMicroseconds);
                 continue;
             }
-            if(@stream_select( $changed, $null, $null, 0, 0) === false){
-                time_nanosleep(0, 100);
+            if(@stream_select( $changed, $null, $null, $this->selectTimeoutSeconds, $this->selectTimeoutMicroseconds) === false){
+                usleep($this->selectTimeoutMicroseconds);
                 continue;
             }
 
@@ -67,7 +67,6 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
                     $watcher->invoke();
                 }
             }
-            time_nanosleep(0, 100);
         }
         return true;
     }

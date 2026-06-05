@@ -13,11 +13,12 @@ class SocketServer
     private $port;
     private $context;
     private $socket;
+    private $errorNo;
+    private $errorMessage;
 
     // internal
     private $eventLoopType;
     private $eventLoop;
-    private $socketWatcher;
     private $mainWatcher;
     private $disconnectWatcher;
     private $connections = [];
@@ -27,9 +28,6 @@ class SocketServer
 
     // store handler
     private $handler = NULL;
-
-    // parallel
-    private $pool;
 
     /**
      * Constructor
@@ -48,7 +46,7 @@ class SocketServer
             $this->context = new \obray\StreamContext();
         }
 
-        set_error_handler([$this, 'errorHandler'], E_WARNING & E_NOTICE & E_PARSE);
+        set_error_handler([$this, 'errorHandler'], E_WARNING | E_NOTICE | E_PARSE);
     }
 
     /**
@@ -136,10 +134,6 @@ class SocketServer
 
     private function watch()
     {
-        if(class_exists('Pool')){
-            $this->pool = new \Pool(500); 
-        }
-        
         // add watcher for new connectionszz
         $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
             $this->connectNewSockets($watcher->data);
@@ -155,11 +149,6 @@ class SocketServer
         }, $this->socket);
         // run the event loop
         $this->eventLoop->run();
-
-        if(!empty($this->pool)){
-            while ($this->pool->collect());
-            $this->pool->shutdown();
-        }
     }
 
     /**
@@ -172,75 +161,34 @@ class SocketServer
 
     private function connectNewSockets($socket)
     {
-        // check if we can use threads
-        if(!empty($this->pool)){
-            $this->log("Attempting new connection");
-            // attempt to accept a new socket connection
-            $connection = new \obray\threaded\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
-            $this->log("Got connection");
-            if($connection->isConnected()){
-                // save the connection
-                $this->connections[] = $connection;
-                // submit to the pool
-                $this->pool->submit($connection);
-                // start watching the connection
-                //$connection->run();
-                // return true on success
-                return true;
-            }
-        } else {
-            // attempt to accept a new socket connection
-            try {
-                $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
-
-            // on main socket failure attempt to restart the server
-            } catch (\obray\exceptions\SocketFailureException $e) {
-                // stop existing watcher
+        try {
+            $connection = new \obray\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
+        } catch (\obray\exceptions\SocketFailureException $e) {
+            if($this->mainWatcher !== null){
                 $this->mainWatcher->stop();
-                // stop the main event loop
+            }
+            if($this->eventLoop !== null){
                 $this->eventLoop->stop();
-                // re-bind and start the server
-                try {
-                    $this->serve();
-                } catch (\Exception $e) {
-                    $this->log("Terminate the server");
-                    exit(1);
-                }
-                // restart the watchers and event loop
-                $this->watch();
-                exit(1);
             }
+            throw $e;
+        }
 
-            // if we get a successful client connection
-            if($connection->isConnected()){
-                $this->numFailedConnections = 0;
-                // start watching the connection
-                $connection->run();
-                // save the connection
-                $this->connections[] = $connection;
-                // return true on success
-                return true;
-            } else {
-                ++$this->numFailedConnections;
-            }
+        if($connection->isConnected()){
+            $this->numFailedConnections = 0;
+            $connection->run();
+            $this->connections[] = $connection;
+            return true;
+        }
 
-            // if failed connections gets out of hand, exit the server
-            if($this->numFailedConnections > 10000){
-                // stop existing watcher
+        ++$this->numFailedConnections;
+        if($this->numFailedConnections > 10000){
+            if($this->mainWatcher !== null){
                 $this->mainWatcher->stop();
-                // stop the main event loop
-                $this->eventLoop->stop();
-                // re-bind and start the server
-                try {
-                    $this->serve();
-                } catch (\Exception $e) {
-                    $this->log("Terminate the server");
-                    exit(1);
-                }
-                // restart the watchers and event loop
-                $this->watch();
-                exit(1);
             }
+            if($this->eventLoop !== null){
+                $this->eventLoop->stop();
+            }
+            throw new \obray\exceptions\SocketFailureException("Too many failed socket connections.");
         }
         return false;
     }

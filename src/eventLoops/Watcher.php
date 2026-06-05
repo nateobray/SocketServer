@@ -2,7 +2,7 @@
 
 namespace obray\eventLoops;
 
-class Watcher
+class Watcher implements \obray\interfaces\WatcherInterface
 {
     private $callback;
     private $started = 0;
