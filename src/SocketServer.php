@@ -23,6 +23,7 @@ class SocketServer
     private $connections = [];
     private $numFailedConnections = 0;
     private $showServerStatus = true;
+    private $logger;
 
     // store handler
     private $handler = NULL;
@@ -91,6 +92,19 @@ class SocketServer
         $this->showServerStatus = $showServerStatus;
     }
 
+    public function setLogger(callable $logger = null): void
+    {
+        $this->logger = $logger;
+    }
+
+    public function watchTimer(float $delay, float $interval, callable $callback, $data = null)
+    {
+        if($this->eventLoop === null){
+            throw new \Exception("Cannot register timer before the event loop has been created.");
+        }
+        return $this->eventLoop->watchTimer($delay, $interval, $callback, $data);
+    }
+
     /**
      * Serve
      * 
@@ -101,14 +115,14 @@ class SocketServer
     {
         $listenstr = $this->protocol."://".$this->host.":".$this->port;
         if($this->showServerStatus){
-            print_r("Connecting: " . $listenstr . "\n");
+            $this->log("Connecting: " . $listenstr);
         }
         $this->socket = stream_socket_server($listenstr, $this->errorNo,$this->errorMessage,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN,$this->context->get());
         if( !is_resource($this->socket) ){
 			throw new \Exception("Unable to bind to ".$this->host.":".$this->port." over ".$this->protocol.": " . $this->errorMessage . "\n");
         }
         if($this->showServerStatus){
-            print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
+            $this->log("Listening on ".$this->host.":".$this->port." over ".$this->protocol);
         }
         return true;
     }
@@ -136,7 +150,7 @@ class SocketServer
                 if(!$this->connections[$index]->isConnected()) unset($this->connections[$index]);
             }
             if($this->showServerStatus){
-                print_r("Total connections: " . count($this->connections) . "\n");
+                $this->log("Total connections: " . count($this->connections));
             }
         }, $this->socket);
         // run the event loop
@@ -160,10 +174,10 @@ class SocketServer
     {
         // check if we can use threads
         if(!empty($this->pool)){
-            print_r("Attempting new connection\n");
+            $this->log("Attempting new connection");
             // attempt to accept a new socket connection
             $connection = new \obray\threaded\SocketConnection($socket, $this->eventLoop, $this->handler, $this->context->isEncrypted());
-            print_r("got connection\n");
+            $this->log("Got connection");
             if($connection->isConnected()){
                 // save the connection
                 $this->connections[] = $connection;
@@ -189,7 +203,7 @@ class SocketServer
                 try {
                     $this->serve();
                 } catch (\Exception $e) {
-                    print_r("terminate the server\n");
+                    $this->log("Terminate the server");
                     exit(1);
                 }
                 // restart the watchers and event loop
@@ -220,7 +234,7 @@ class SocketServer
                 try {
                     $this->serve();
                 } catch (\Exception $e) {
-                    print_r("terminate the server\n");
+                    $this->log("Terminate the server");
                     exit(1);
                 }
                 // restart the watchers and event loop
@@ -266,22 +280,31 @@ class SocketServer
         switch($errno){
             // and warnings
             case E_WARNING:
-                print_r("(".$errno.") " . $errstr . "\n");
+                $this->log("(".$errno.") " . $errstr);
                 if($errstr == 'stream_socket_accept(): accept failed: Invalid argument'){
-                    print_r("\n\n");
-                    print_r("Error: (".$errno.") " . $errstr . "\n");
+                    $this->log("Error: (".$errno.") " . $errstr);
                     throw new \obray\exceptions\SocketFailureException();
                 } else if (strpos($errstr, "stream_socket_accept(): accept failed: Too many open files in") !== false){
-                    print_r("\n\n");
-                    print_r("Error: (".$errno.") " . $errstr . "\n");
+                    $this->log("Error: (".$errno.") " . $errstr);
                     throw new \obray\exceptions\SocketFailureException();
                 }
             break;
             // print everything else to screen
             default:
-                print_r("(".$errno.") " . $errstr . "\n");
+                $this->log("(".$errno.") " . $errstr);
             break;
         }
         
+    }
+
+    private function log(string $message): void
+    {
+        if($this->logger !== null){
+            ($this->logger)($message);
+            return;
+        }
+        if($this->showServerStatus){
+            print_r($message . "\n");
+        }
     }
 }
