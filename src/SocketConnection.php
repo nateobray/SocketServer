@@ -223,10 +223,21 @@ class SocketConnection implements \obray\interfaces\SocketConnectionInterface
 
     public function disconnect()
     {
-        fclose($this->socket);
-        $this->writeWatcher = null;
-        $this->readWatcher = null;
+        if(!$this->isConnected){
+            return;
+        }
+        $this->handler->onDisconnect($this);
+        if(is_resource($this->socket)){
+            fclose($this->socket);
+        }
+        if($this->writeWatcher !== null){
+            $this->writeWatcher->stop();
+        }
+        if($this->readWatcher !== null){
+            $this->readWatcher->stop();
+        }
         $this->isConnected = false;
+        $this->handler->onDisconnected($this);
 
     }
 

@@ -101,7 +101,7 @@ class SocketConnection extends \Volatile implements \obray\interfaces\SocketConn
                 $shouldRead = false;
             }
             if($this->handler !== null){
-                $this->handler->onData($data, $this);
+                $this->handler->onData($data, mb_strlen($data, '8bit'), $this);
             }
         }
     }

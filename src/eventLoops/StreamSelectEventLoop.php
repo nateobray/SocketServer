@@ -24,9 +24,25 @@ class StreamSelectEventLoop implements \obray\interfaces\EventLoopInterface
     {
         $sockets = [];
         while($this->runLoop){
+            forEach($this->socketWatchersSockets as $index => $socket){
+                if(!is_resource($socket) || empty($this->socketWatchers[$index]) || $this->socketWatchers[$index]->isActive === false){
+                    unset($this->socketWatchers[$index]);
+                    unset($this->socketWatchersSockets[$index]);
+                }
+            }
+
             $changed = $this->socketWatchersSockets; $null = NULL;
-            $changed[] = $this->socket;
-            @stream_select( $changed, $null, $null, 0, 0);
+            if(is_resource($this->socket)){
+                $changed[] = $this->socket;
+            }
+            if(empty($changed)){
+                time_nanosleep(0, 100);
+                continue;
+            }
+            if(@stream_select( $changed, $null, $null, 0, 0) === false){
+                time_nanosleep(0, 100);
+                continue;
+            }
 
             // call callbacks for changed sockets
             forEach($changed as $socket){

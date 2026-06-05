@@ -16,8 +16,13 @@ class SocketServer
 
     // internal
     private $eventLoopType;
+    private $eventLoop;
     private $socketWatcher;
+    private $mainWatcher;
+    private $disconnectWatcher;
     private $connections = [];
+    private $numFailedConnections = 0;
+    private $showServerStatus = true;
 
     // store handler
     private $handler = NULL;
@@ -52,13 +57,18 @@ class SocketServer
      * stream select loop to and handle incoming and outgoing data
      */
 
-    public function start(\obray\interfaces\SocketServerHandlerInterface $handler)
+    public function start(\obray\interfaces\SocketServerHandlerInterface $handler = null)
     {
-        $this->handler = $handler;
+        if($handler !== null){
+            $this->handler = $handler;
+        }
+        if($this->handler === null){
+            throw new \Exception("Socket server handler has not been registered.");
+        }
         // start the server
         $this->serve();
         
-        if( $this->eventLoopType === NULL && !class_exists( '\EV' || $this->eventLoopType === EV ) ) {
+        if($this->eventLoopType === self::EV && class_exists('\EV')) {
             $this->eventLoop = new \obray\eventLoops\EVLoop();
         } else {
             $this->eventLoop = new \obray\eventLoops\StreamSelectEventLoop($this->socket);
@@ -71,6 +81,16 @@ class SocketServer
         $this->watch();
     }
 
+    public function registerHandler(\obray\interfaces\SocketServerHandlerInterface $handler): void
+    {
+        $this->handler = $handler;
+    }
+
+    public function showServerStatus(bool $showServerStatus): void
+    {
+        $this->showServerStatus = $showServerStatus;
+    }
+
     /**
      * Serve
      * 
@@ -80,12 +100,16 @@ class SocketServer
     private function serve()
     {
         $listenstr = $this->protocol."://".$this->host.":".$this->port;
-        print_r("Connecting: " . $listenstr . "\n");
+        if($this->showServerStatus){
+            print_r("Connecting: " . $listenstr . "\n");
+        }
         $this->socket = stream_socket_server($listenstr, $this->errorNo,$this->errorMessage,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN,$this->context->get());
         if( !is_resource($this->socket) ){
 			throw new \Exception("Unable to bind to ".$this->host.":".$this->port." over ".$this->protocol.": " . $this->errorMessage . "\n");
         }
-        print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
+        if($this->showServerStatus){
+            print_r("Listening on ".$this->host.":".$this->port." over ".$this->protocol."\n");
+        }
         return true;
     }
 
@@ -102,8 +126,6 @@ class SocketServer
             $this->pool = new \Pool(500); 
         }
         
-        // create new event loop
-        $this->eventLoop = new \obray\eventLoops\EVLoop();
         // add watcher for new connectionszz
         $this->mainWatcher = $this->eventLoop->watchStreamSocket($this->socket, function($watcher){
             $this->connectNewSockets($watcher->data);
@@ -113,7 +135,9 @@ class SocketServer
             forEach($this->connections as $index => $connection){
                 if(!$this->connections[$index]->isConnected()) unset($this->connections[$index]);
             }
-            print_r("Total connections: " . count($this->connections) . "\n");
+            if($this->showServerStatus){
+                print_r("Total connections: " . count($this->connections) . "\n");
+            }
         }, $this->socket);
         // run the event loop
         $this->eventLoop->run();
@@ -237,7 +261,7 @@ class SocketServer
      * server
      */
 
-    public function errorHandler(int $errno ,string $errstr, string $errfile, int $errline, array $errcontext)
+    public function errorHandler(int $errno ,string $errstr, string $errfile, int $errline, array $errcontext = [])
     {
         switch($errno){
             // and warnings

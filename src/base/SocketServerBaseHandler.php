@@ -41,7 +41,7 @@ class SocketServerBaseHandler implements \obray\interfaces\SocketServerHandlerIn
     public function onReadFailed(\obray\interfaces\SocketConnectionInterface $connection): void
     {
         print_r("Read failed!\n");
-        $server->disconnect($socket);
+        $connection->disconnect();
     }
 
     public function onDisconnect(\obray\interfaces\SocketConnectionInterface $connection): void
